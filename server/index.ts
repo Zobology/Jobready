@@ -174,7 +174,9 @@ app.get('/api/files/:key', requireUser, async (request, response, next) => {
       `select sf.content_type from stored_files sf
        where sf.object_key = $1 and (
          sf.owner_id = $2 or $3 = 'admin' or exists (
-           select 1 from review_assignments ra where ra.assessment_id = sf.assessment_id and ra.reviewer_id = $2
+           select 1 from review_assignments ra
+           where ra.assessment_id = sf.assessment_id and ra.reviewer_id = $2
+             and ra.status in ('accepted', 'in_review', 'completed')
          )
        )`,
       [key, request.user!.id, request.user!.role],
@@ -221,7 +223,66 @@ app.post('/api/candidate/assessments', requireRole('candidate'), async (request,
   }
 })
 
-const reviewSchema = z.object({ questionReviews: z.record(z.string(), z.unknown()), status: z.enum(['pending', 'in_review', 'completed']) })
+const reviewSchema = z.object({ questionReviews: z.record(z.string(), z.unknown()), status: z.enum(['in_review', 'completed']) })
+
+app.post('/api/reviewer/reviews/:id/decision', requireRole('reviewer'), async (request, response, next) => {
+  try {
+    const decision = z.enum(['accept', 'decline']).parse(request.body.decision)
+    await transaction(async (client) => {
+      const assignment = (await client.query<{ id: string; assessment_id: string; status: string }>(
+        `select ra.id, ra.assessment_id, ra.status
+         from review_assignments ra
+         join assessments a on a.id = ra.assessment_id
+         where ra.id = $1 and ra.reviewer_id = $2
+         for update of ra, a`,
+        [request.params.id, request.user!.id],
+      )).rows[0]
+      if (!assignment) throw Object.assign(new Error('Review opportunity not found'), { status: 404 })
+      if (assignment.status !== 'available') throw Object.assign(new Error('This review opportunity is no longer available'), { status: 409 })
+
+      if (decision === 'decline') {
+        await client.query(`update review_assignments set status = 'declined' where id = $1`, [assignment.id])
+        await client.query(
+          `insert into audit_log(actor_id,action,entity_type,entity_id)
+           values($1,'review_opportunity_declined','review_assignment',$2)`,
+          [request.user!.id, assignment.id],
+        )
+        return
+      }
+
+      const active = await client.query<{ count: string }>(
+        `select count(*) from review_assignments
+         where assessment_id = $1 and status in ('accepted', 'in_review', 'completed')`,
+        [assignment.assessment_id],
+      )
+      if (Number(active.rows[0].count) >= 2) {
+        await client.query(`update review_assignments set status = 'declined' where id = $1`, [assignment.id])
+        throw Object.assign(new Error('Two mentors have already accepted this assessment'), { status: 409 })
+      }
+
+      await client.query(`update review_assignments set status = 'accepted' where id = $1`, [assignment.id])
+      await client.query(`update assessments set status = 'under_review' where id = $1 and status = 'awaiting_review'`, [assignment.assessment_id])
+      const accepted = await client.query<{ count: string }>(
+        `select count(*) from review_assignments
+         where assessment_id = $1 and status in ('accepted', 'in_review', 'completed')`,
+        [assignment.assessment_id],
+      )
+      if (Number(accepted.rows[0].count) >= 2) {
+        await client.query(
+          `update review_assignments set status = 'declined'
+           where assessment_id = $1 and status = 'available'`,
+          [assignment.assessment_id],
+        )
+      }
+      await client.query(
+        `insert into audit_log(actor_id,action,entity_type,entity_id)
+         values($1,'review_opportunity_accepted','review_assignment',$2)`,
+        [request.user!.id, assignment.id],
+      )
+    })
+    response.json({ state: await loadPortalState(request.user!), user: publicUser(request.user!) })
+  } catch (error) { next(error) }
+})
 
 app.put('/api/reviewer/reviews/:id', requireRole('reviewer'), async (request, response, next) => {
   try {
@@ -230,7 +291,7 @@ app.put('/api/reviewer/reviews/:id', requireRole('reviewer'), async (request, re
       const updated = await client.query<{ assessment_id: string }>(
         `update review_assignments set rubric_scores=$1, status=$2,
           started_at=coalesce(started_at, now()), completed_at=case when $2='completed' then now() else completed_at end
-         where id=$3 and reviewer_id=$4 and status <> 'completed' returning assessment_id`,
+         where id=$3 and reviewer_id=$4 and status in ('accepted', 'in_review') returning assessment_id`,
         [JSON.stringify(input.questionReviews), input.status, request.params.id, request.user!.id],
       )
       if (!updated.rows[0]) throw Object.assign(new Error('Review not found'), { status: 404 })
@@ -266,19 +327,19 @@ app.patch('/api/admin/reviewers/:id', requireRole('admin'), async (request, resp
            from assessments a
            where a.status in ('awaiting_review','under_review')
              and (a.role_snapshot->>'id'=any($2) or a.industry_snapshot->>'id'=any($3))
-             and (select count(*) from review_assignments where assessment_id=a.id) < 2
+             and (select count(*) from review_assignments where assessment_id=a.id and status in ('accepted','in_review','completed')) < 2
              and not exists(select 1 from review_assignments where assessment_id=a.id and reviewer_id=$1)
            order by a.review_due_at asc limit 25`,
           [request.params.id, profile.role_ids, profile.industry_ids],
         )
         for (const assessment of openAssessments.rows) {
           const assignment = await client.query<{ id: string }>(
-            'insert into review_assignments(assessment_id,reviewer_id,match_score) values($1,$2,$3) returning id',
+            `insert into review_assignments(assessment_id,reviewer_id,match_score,status)
+             values($1,$2,$3,'available') returning id`,
             [assessment.id, request.params.id, assessment.match_score],
           )
-          await client.query(`update assessments set status='under_review' where id=$1`, [assessment.id])
           await client.query(
-            `insert into notification_outbox(recipient_id,event_type,payload) values($1,'review_assigned',jsonb_build_object('assessment_id',$2::uuid,'assignment_id',$3::uuid,'subject','New Zobology assessment assigned'))`,
+            `insert into notification_outbox(recipient_id,event_type,payload) values($1,'review_assigned',jsonb_build_object('assessment_id',$2::uuid,'assignment_id',$3::uuid,'subject','New Assessment Ready for Your Review'))`,
             [request.params.id, assessment.id, assignment.rows[0].id],
           )
         }

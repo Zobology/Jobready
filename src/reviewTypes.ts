@@ -33,7 +33,7 @@ export interface QuestionReview {
 export interface HumanReview {
   id: string
   reviewerName: string
-  status: 'pending' | 'in_review' | 'completed'
+  status: 'available' | 'accepted' | 'declined' | 'in_review' | 'completed'
   questionReviews: Record<string, QuestionReview>
   startedAt?: string
   completedAt?: string

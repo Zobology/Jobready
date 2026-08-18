@@ -39,7 +39,6 @@ function layout(content: string) {
 function templateFor(notification: NotificationRow) {
   const firstName = escapeHtml(notification.first_name?.trim() || 'there')
   const fullName = escapeHtml([notification.first_name, notification.last_name].filter(Boolean).join(' ').trim() || 'there')
-  const candidateName = escapeHtml(notification.candidate_name?.trim() || 'Candidate')
   const assessmentName = escapeHtml([notification.role_name, notification.industry_name].filter(Boolean).join(' · ') || 'Zobology Job Readiness Assessment')
   const submittedOn = notification.submitted_at
     ? new Date(notification.submitted_at).toLocaleDateString('en-IN', { day: 'numeric', month: 'long', year: 'numeric' })
@@ -71,7 +70,7 @@ function templateFor(notification: NotificationRow) {
       const reviewUrl = assignmentId ? `${appUrl}/?review=${encodeURIComponent(assignmentId)}` : appUrl
       return {
         subject: 'New Assessment Ready for Your Review',
-        html: layout(`<p>Hi ${fullName},</p><p>A candidate assessment has been assigned to you for review.</p><p>Your feedback will help the candidate understand their strengths, identify improvement areas, and take the right next steps toward becoming job ready.</p><p><strong>Assessment Details</strong></p><table style="width:100%;border-collapse:collapse"><tr><td style="padding:8px;border-bottom:1px solid #e4ebe7;color:#667872">Candidate</td><td style="padding:8px;border-bottom:1px solid #e4ebe7;font-weight:700">${candidateName}</td></tr><tr><td style="padding:8px;border-bottom:1px solid #e4ebe7;color:#667872">Assessment</td><td style="padding:8px;border-bottom:1px solid #e4ebe7;font-weight:700">${assessmentName}</td></tr><tr><td style="padding:8px;border-bottom:1px solid #e4ebe7;color:#667872">Submitted On</td><td style="padding:8px;border-bottom:1px solid #e4ebe7;font-weight:700">${escapeHtml(submittedOn)}</td></tr></table>${button('Review', reviewUrl)}<p>Please review the assessment and share your feedback at your earliest convenience.</p><p>Thank you for helping candidates turn their potential into progress.</p>${signature()}`),
+        html: layout(`<p>Hi ${fullName},</p><p>A matching candidate assessment is available for you to review.</p><p>Your feedback will help the candidate understand their strengths, identify improvement areas, and take the right next steps toward becoming job ready.</p><p><strong>Assessment Details</strong></p><table style="width:100%;border-collapse:collapse"><tr><td style="padding:8px;border-bottom:1px solid #e4ebe7;color:#667872">Candidate</td><td style="padding:8px;border-bottom:1px solid #e4ebe7;font-weight:700">Details available after acceptance</td></tr><tr><td style="padding:8px;border-bottom:1px solid #e4ebe7;color:#667872">Assessment</td><td style="padding:8px;border-bottom:1px solid #e4ebe7;font-weight:700">${assessmentName}</td></tr><tr><td style="padding:8px;border-bottom:1px solid #e4ebe7;color:#667872">Submitted On</td><td style="padding:8px;border-bottom:1px solid #e4ebe7;font-weight:700">${escapeHtml(submittedOn)}</td></tr></table>${button('View opportunity', reviewUrl)}<p>Accept the opportunity from your mentor dashboard to open the candidate’s responses and scoring rubric.</p><p>Thank you for helping candidates turn their potential into progress.</p>${signature()}`),
       }
     }
     case 'reviewer_approved':

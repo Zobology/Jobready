@@ -37,7 +37,7 @@ import type { AssignedReview, PortalAccount, PortalDatabase, PortalSubmission, R
 
 type PublicView = 'landing' | 'signin' | 'signup' | 'reviewer-signup'
 type CandidateView = 'profile' | 'assessment' | 'waiting' | 'results'
-type ReviewerView = 'pending' | 'queue' | 'review'
+type ReviewerView = 'queue' | 'review'
 type AdminView = 'dashboard' | 'reviewers' | 'adjudication'
 
 const initialProfile: CandidateProfile = {
@@ -232,6 +232,43 @@ export default function Portal() {
     window.scrollTo(0, 0)
   }
 
+  async function decideReview(reviewId: string, decision: 'accept' | 'decline') {
+    setOperationError('')
+    if (backendEnabled) {
+      try {
+        const result = await api.decideReview(reviewId, decision)
+        updateDatabase(result.state)
+        if (decision === 'accept') {
+          setActiveReviewId(reviewId)
+          setReviewQuestionIndex(0)
+          setReviewerView('review')
+        }
+      } catch (error) { setOperationError((error as Error).message) }
+      return
+    }
+    const selected = database.reviews.find((item) => item.id === reviewId)
+    if (!selected || selected.status !== 'available') return
+    const activeCount = database.reviews.filter((item) => item.submissionId === selected.submissionId && ['accepted', 'in_review', 'completed'].includes(item.status)).length
+    if (decision === 'accept' && activeCount >= 2) {
+      setOperationError('Two mentors have already accepted this assessment')
+      return
+    }
+    const newStatus = decision === 'accept' ? 'accepted' as const : 'declined' as const
+    let reviews = database.reviews.map((item) => item.id === reviewId ? { ...item, status: newStatus } : item)
+    if (decision === 'accept' && activeCount + 1 >= 2) {
+      reviews = reviews.map((item) => item.submissionId === selected.submissionId && item.status === 'available' ? { ...item, status: 'declined' as const } : item)
+    }
+    const submissions = decision === 'accept'
+      ? database.submissions.map((item) => item.id === selected.submissionId ? { ...item, status: 'under_review' as const, assignedReviewerIds: [...new Set([...item.assignedReviewerIds, selected.reviewerId])] } : item)
+      : database.submissions
+    updateDatabase({ ...database, reviews, submissions })
+    if (decision === 'accept') {
+      setActiveReviewId(reviewId)
+      setReviewQuestionIndex(0)
+      setReviewerView('review')
+    }
+  }
+
   if (!ready) return <div className="portal-loader"><span className="brand-mark"><TrendingUp /></span><p>Preparing Zobology…</p></div>
 
   if (!account) {
@@ -267,9 +304,8 @@ export default function Portal() {
     : candidateSubmission
       ? candidateSubmission.status === 'published' ? 'results' : 'waiting'
       : 'profile'
-  const resolvedReviewerView: ReviewerView = reviewerView === 'review'
-    ? 'review'
-    : reviewerProfile?.status === 'approved' ? 'queue' : 'pending'
+  const activeReviewCanOpen = activeReview && ['accepted', 'in_review', 'completed'].includes(activeReview.status)
+  const resolvedReviewerView: ReviewerView = reviewerView === 'review' && activeReviewCanOpen ? 'review' : 'queue'
   const navItems = account.role === 'candidate'
     ? [{ id: 'assessment', label: 'Assessment' }, { id: 'results', label: 'Results' }]
     : account.role === 'reviewer'
@@ -333,11 +369,11 @@ export default function Portal() {
 
         {account.role === 'reviewer' && reviewerProfile && (
           <>
-            {resolvedReviewerView === 'pending' && <ReviewerPending profile={reviewerProfile} />}
             {resolvedReviewerView === 'queue' && (
               <ReviewerDashboard
                 account={account}
                 database={database}
+                onDecision={decideReview}
                 onOpen={(reviewId) => { setActiveReviewId(reviewId); setReviewQuestionIndex(0); setReviewerView('review'); window.scrollTo(0, 0) }}
               />
             )}
@@ -599,15 +635,13 @@ function CandidateWaiting({ submission }: { submission: PortalSubmission }) {
   )
 }
 
-function ReviewerPending({ profile }: { profile: ReviewerProfile }) {
-  return <div className="status-page"><section className="status-card compact-status"><div className="status-icon pending"><Clock3 size={30} /></div><div className="eyebrow"><span /> Application received</div><h1>Mentor approval pending</h1><p className="status-lead">Our admin team will verify your application. Your matched assessment queue will become available once approved.</p><div className="submission-reference"><span><small>Roles selected</small><b>{profile.roleIds.length}</b></span><span><small>Industries selected</small><b>{profile.industryIds.length}</b></span><span><small>Résumé</small><b>{profile.resumeKey ? 'Attached' : 'Not provided'}</b></span><span><small>Status</small><b>{profile.status}</b></span></div></section></div>
-}
-
-function ReviewerDashboard({ account, database, onOpen }: { account: PortalAccount; database: PortalDatabase; onOpen: (reviewId: string) => void }) {
-  const reviews = database.reviews.filter((item) => item.reviewerId === account.id)
-  const open = reviews.filter((item) => item.status !== 'completed')
+function ReviewerDashboard({ account, database, onOpen, onDecision }: { account: PortalAccount; database: PortalDatabase; onOpen: (reviewId: string) => void; onDecision: (reviewId: string, decision: 'accept' | 'decline') => void }) {
+  const reviews = database.reviews.filter((item) => item.reviewerId === account.id && item.status !== 'declined')
+  const available = reviews.filter((item) => item.status === 'available')
+  const active = reviews.filter((item) => ['accepted', 'in_review'].includes(item.status))
+  const completed = reviews.filter((item) => item.status === 'completed')
   return (
-    <div className="workspace-page"><div className="workspace-heading"><div><div className="eyebrow"><span /> Mentor workspace</div><h1>Your assessment queue</h1><p>Assignments are matched to your approved role and industry expertise.</p></div><div className="workspace-stats"><Stat icon={<ClipboardCheck />} label="Open assessments" value={open.length} /><Stat icon={<CheckCircle2 />} label="Completed" value={reviews.length - open.length} /></div></div><div className="queue-table portal-queue"><div className="queue-table-head"><span>Candidate</span><span>Target profile</span><span>Assigned</span><span>Progress</span><span>Status</span><span /></div>{reviews.length === 0 ? <div className="empty-queue"><ClipboardCheck size={28} /><strong>No matched assessments yet</strong><span>We’ll notify you by email when a suitable assessment is assigned.</span></div> : reviews.map((review) => { const submission = database.submissions.find((item) => item.id === review.submissionId); if (!submission) return null; const progress = Object.keys(review.questionReviews).length; return <div className="queue-row" key={review.id}><div className="candidate-cell"><i>{submission.profile.name[0]}</i><span><strong>{submission.profile.name}</strong><small>{submission.id}</small></span></div><div><strong>{submission.role.name}</strong><small>{submission.industry.name} · {submission.profile.level}</small></div><div><strong>{new Date(submission.submittedAt).toLocaleDateString()}</strong><small>Due within 24 hours</small></div><div className="queue-progress"><strong>{progress}/{submission.questions.length}</strong><span><i style={{ width: `${progress / submission.questions.length * 100}%` }} /></span></div><div><span className={`review-status ${review.status}`}>{review.status.replace('_', ' ')}</span></div><button className="review-action" onClick={() => onOpen(review.id)}>{review.status === 'completed' ? 'View' : progress ? 'Continue' : 'Start'} <ArrowRight size={14} /></button></div> })}</div></div>
+    <div className="workspace-page"><div className="workspace-heading"><div><div className="eyebrow"><span /> Mentor workspace</div><h1>Mentor dashboard</h1><p>Choose matching opportunities and score accepted assessments against the evidence-based rubric.</p></div><div className="workspace-stats"><Stat icon={<ClipboardCheck />} label="Available" value={available.length} /><Stat icon={<Clock3 />} label="In progress" value={active.length} /><Stat icon={<CheckCircle2 />} label="Completed" value={completed.length} /></div></div><div className="review-type-note"><ClipboardCheck size={18} /><span><strong>Assessment reviews</strong><small>Available now</small></span><div /><Sparkles size={18} /><span><strong>Coaching plan reviews</strong><small>Coming soon</small></span></div><div className="queue-table portal-queue"><div className="queue-table-head"><span>Review</span><span>Target profile</span><span>Received</span><span>Progress</span><span>Status</span><span>Action</span></div>{reviews.length === 0 ? <div className="empty-queue"><ClipboardCheck size={28} /><strong>No reviews available right now</strong><span>Matching assessment opportunities will appear here when available.</span></div> : reviews.map((review) => { const submission = database.submissions.find((item) => item.id === review.submissionId); if (!submission) return null; const progress = Object.keys(review.questionReviews).length; const accepted = review.status !== 'available'; const total = accepted ? submission.questions.length : 0; return <div className="queue-row" key={review.id}><div className="candidate-cell"><i>{accepted ? submission.profile.name[0] : 'A'}</i><span><strong>Assessment review</strong><small>{accepted ? submission.profile.name : 'Candidate details unlock after acceptance'}</small></span></div><div><strong>{submission.role.name}</strong><small>{submission.industry.name} · {submission.profile.level}</small></div><div><strong>{new Date(submission.submittedAt).toLocaleDateString()}</strong><small>Complete within 24 hours of acceptance</small></div><div className="queue-progress"><strong>{accepted ? `${progress}/${total}` : '—'}</strong>{accepted && <span><i style={{ width: `${total ? progress / total * 100 : 0}%` }} /></span>}</div><div><span className={`review-status ${review.status}`}>{review.status.replace('_', ' ')}</span></div>{review.status === 'available' ? <div className="review-opportunity-actions"><button className="decline-review" onClick={() => onDecision(review.id, 'decline')}>Decline</button><button className="accept-review" onClick={() => onDecision(review.id, 'accept')}>Accept</button></div> : <button className="review-action" onClick={() => onOpen(review.id)}>{review.status === 'completed' ? 'View' : progress ? 'Continue' : 'Start'} <ArrowRight size={14} /></button>}</div> })}</div></div>
   )
 }
 
@@ -634,8 +668,8 @@ function AdminPanel({ view, database, onView, onUpdate, onReviewerDecision, onPu
         openSubmissions.forEach((submission) => {
           if (next.reviews.some((review) => review.submissionId === submission.id && review.reviewerId === userId)) return
           const mentorAccount = next.accounts.find((account) => account.id === userId)
-          const review: AssignedReview = { id: createId('REV'), submissionId: submission.id, reviewerId: userId, reviewerName: mentorAccount ? `${mentorAccount.firstName || ''} ${mentorAccount.lastName || ''}`.trim() || mentorAccount.email.split('@')[0] : 'Industry mentor', status: 'pending', questionReviews: {} }
-          next = { ...next, reviews: [...next.reviews, review], submissions: next.submissions.map((item) => item.id === submission.id ? { ...item, assignedReviewerIds: [...item.assignedReviewerIds, userId].slice(0, 2), status: 'under_review' } : item) }
+          const review: AssignedReview = { id: createId('REV'), submissionId: submission.id, reviewerId: userId, reviewerName: mentorAccount ? `${mentorAccount.firstName || ''} ${mentorAccount.lastName || ''}`.trim() || mentorAccount.email.split('@')[0] : 'Industry mentor', status: 'available', questionReviews: {} }
+          next = { ...next, reviews: [...next.reviews, review] }
         })
       }
     }

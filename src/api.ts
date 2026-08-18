@@ -44,6 +44,9 @@ export const api = {
   saveReview(review: HumanReview) {
     return request<StateResponse>(`/reviewer/reviews/${review.id}`, { method: 'PUT', body: JSON.stringify({ status: review.status, questionReviews: review.questionReviews }) })
   },
+  decideReview(reviewId: string, decision: 'accept' | 'decline') {
+    return request<StateResponse>(`/reviewer/reviews/${reviewId}/decision`, { method: 'POST', body: JSON.stringify({ decision }) })
+  },
   decideReviewer(userId: string, status: 'approved' | 'rejected') {
     return request<StateResponse>(`/admin/reviewers/${userId}`, { method: 'PATCH', body: JSON.stringify({ status }) })
   },

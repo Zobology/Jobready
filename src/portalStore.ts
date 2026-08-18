@@ -99,7 +99,7 @@ export function assignSubmission(database: PortalDatabase, submission: PortalSub
     }))
     .filter((match) => match.score > 0)
     .sort((a, b) => b.score - a.score || a.workload - b.workload || a.reviewer.appliedAt.localeCompare(b.reviewer.appliedAt))
-    .slice(0, 2)
+    .slice(0, 25)
 
   const assignedReviewerIds = eligible.map((match) => match.reviewer.userId)
   const reviews: AssignedReview[] = assignedReviewerIds.map((reviewerId) => ({
@@ -110,7 +110,7 @@ export function assignSubmission(database: PortalDatabase, submission: PortalSub
       const account = database.accounts.find((item) => item.id === reviewerId)
       return account ? `${account.firstName || ''} ${account.lastName || ''}`.trim() || account.email.split('@')[0] : 'Industry mentor'
     })(),
-    status: 'pending',
+    status: 'available',
     questionReviews: {},
   }))
   const notifications = assignedReviewerIds.map((reviewerId) => ({
@@ -122,7 +122,7 @@ export function assignSubmission(database: PortalDatabase, submission: PortalSub
   }))
   return {
     ...database,
-    submissions: [...database.submissions, { ...submission, assignedReviewerIds, status: assignedReviewerIds.length ? 'under_review' as const : 'awaiting_review' as const }],
+    submissions: [...database.submissions, { ...submission, assignedReviewerIds: [], status: 'awaiting_review' as const }],
     reviews: [...database.reviews, ...reviews],
     notifications: [...database.notifications, ...notifications],
   }

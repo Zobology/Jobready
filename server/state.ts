@@ -51,7 +51,9 @@ function review(row: Record<string, unknown>) {
 
 const submissionSelect = `
   select a.*,
-    coalesce(array_agg(ra.reviewer_id) filter (where ra.reviewer_id is not null), '{}') as assigned_reviewer_ids
+    coalesce(array_agg(ra.reviewer_id) filter (
+      where ra.reviewer_id is not null and ra.status in ('accepted', 'in_review', 'completed')
+    ), '{}') as assigned_reviewer_ids
   from assessments a left join review_assignments ra on ra.assessment_id = a.id
 `
 
@@ -71,14 +73,15 @@ export async function loadPortalState(user: AuthenticatedUser) {
     : user.role === 'candidate'
       ? `${submissionSelect} where a.candidate_id = $1 group by a.id order by a.submitted_at desc`
       : `${submissionSelect} where exists (
-          select 1 from review_assignments own where own.assessment_id = a.id and own.reviewer_id = $1
+          select 1 from review_assignments own
+          where own.assessment_id = a.id and own.reviewer_id = $1 and own.status <> 'declined'
         ) group by a.id order by a.submitted_at desc`
   const submissionRows = (await pool.query(submissionQuery, user.role === 'admin' ? [] : [user.id])).rows
 
   const reviewQuery = user.role === 'admin'
     ? `select ra.*, u.email::text reviewer_email, coalesce(nullif(trim(concat_ws(' ', u.first_name, u.last_name)), ''), split_part(u.email::text, '@', 1)) reviewer_name from review_assignments ra join users u on u.id = ra.reviewer_id order by ra.assigned_at desc`
     : user.role === 'reviewer'
-      ? `select ra.*, u.email::text reviewer_email, coalesce(nullif(trim(concat_ws(' ', u.first_name, u.last_name)), ''), split_part(u.email::text, '@', 1)) reviewer_name from review_assignments ra join users u on u.id = ra.reviewer_id where ra.reviewer_id = $1 order by ra.assigned_at desc`
+      ? `select ra.*, u.email::text reviewer_email, coalesce(nullif(trim(concat_ws(' ', u.first_name, u.last_name)), ''), split_part(u.email::text, '@', 1)) reviewer_name from review_assignments ra join users u on u.id = ra.reviewer_id where ra.reviewer_id = $1 and ra.status <> 'declined' order by ra.assigned_at desc`
       : null
   const reviewRows = reviewQuery ? (await pool.query(reviewQuery, user.role === 'admin' ? [] : [user.id])).rows : []
 
@@ -95,10 +98,20 @@ export async function loadPortalState(user: AuthenticatedUser) {
     sentAt: row.sent_at ?? undefined,
   }))
 
+  const reviewerStatuses = new Map(reviewRows.map((row) => [String(row.assessment_id), String(row.status)]))
+  const submissions = submissionRows.map((row) => {
+    const mapped = submission(row)
+    if (user.role !== 'reviewer') return mapped
+    const status = reviewerStatuses.get(String(row.id))
+    if (status && ['accepted', 'in_review', 'completed'].includes(status)) return mapped
+    const profile = mapped.profile as Record<string, unknown>
+    return { ...mapped, profile: { ...profile, name: 'Candidate' }, questions: [], answers: {} }
+  })
+
   return {
     accounts,
     reviewers: reviewerRows.map(reviewer),
-    submissions: submissionRows.map(submission),
+    submissions,
     reviews: reviewRows.map(review),
     notifications,
   }
@@ -114,26 +127,22 @@ export async function assignBestReviewers(client: PoolClient, assessmentId: stri
      where rp.status = 'approved' and ($1 = any(rp.role_ids) or $2 = any(rp.industry_ids))
      group by rp.user_id, rp.role_ids, rp.industry_ids, rp.applied_at
      order by match_score desc, count(ra.id) asc, rp.applied_at asc
-     limit 2`,
+     limit 25`,
     [roleId, industryId],
   )
   for (const match of candidates.rows) {
     const assignment = await client.query<{ id: string }>(
-      `insert into review_assignments (assessment_id, reviewer_id, match_score)
-       values ($1, $2, $3) on conflict do nothing returning id`,
+      `insert into review_assignments (assessment_id, reviewer_id, match_score, status)
+       values ($1, $2, $3, 'available') on conflict do nothing returning id`,
       [assessmentId, match.user_id, match.match_score],
     )
     if (assignment.rows[0]) {
       await client.query(
         `insert into notification_outbox (recipient_id, event_type, payload)
-         values ($1, 'review_assigned', jsonb_build_object('assessment_id', $2::uuid, 'assignment_id', $3::uuid, 'subject', 'New Zobology assessment assigned'))`,
+         values ($1, 'review_assigned', jsonb_build_object('assessment_id', $2::uuid, 'assignment_id', $3::uuid, 'subject', 'New Assessment Ready for Your Review'))`,
         [match.user_id, assessmentId, assignment.rows[0].id],
       )
     }
   }
-  await client.query(
-    `update assessments set status = case when exists(select 1 from review_assignments where assessment_id = $1)
-      then 'under_review' else 'awaiting_review' end where id = $1`,
-    [assessmentId],
-  )
+  await client.query(`update assessments set status = 'awaiting_review' where id = $1`, [assessmentId])
 }

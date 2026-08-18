@@ -725,9 +725,21 @@ button { color: inherit; }
 .queue-progress > span i { height: 100%; display: block; background: var(--green); border-radius: 9px; }
 .review-status { display: inline-flex; align-items: center; justify-content: center; padding: 6px 9px; border-radius: 99px; font-size: 8px; font-weight: 800; text-transform: uppercase; letter-spacing: .5px; }
 .review-status.pending { color: #a96031; background: #fff0e5; }
+.review-status.available { color: #8a5a22; background: #fff3df; }
+.review-status.accepted { color: #356f91; background: #eaf3f8; }
 .review-status.in_review { color: #356f91; background: #eaf3f8; }
 .review-status.completed { color: #287563; background: #e5f3ee; }
 .review-action { display: inline-flex; align-items: center; justify-content: center; gap: 5px; min-height: 34px; padding: 0 10px; color: white; background: var(--green); border: 0; border-radius: 8px; font-size: 9px; font-weight: 700; cursor: pointer; }
+.review-opportunity-actions { display: flex; gap: 6px; }
+.review-opportunity-actions button { min-height: 34px; padding: 0 10px; border-radius: 8px; font-size: 9px; font-weight: 700; cursor: pointer; }
+.decline-review { color: #687a74; background: white; border: 1px solid #d5dfdc; }
+.accept-review { color: white; background: var(--green); border: 1px solid var(--green); }
+.review-type-note { display: flex; align-items: center; gap: 10px; margin-top: 26px; padding: 14px 17px; background: white; border: 1px solid var(--line); border-radius: 13px; }
+.review-type-note > svg { color: var(--green); }
+.review-type-note > span strong, .review-type-note > span small { display: block; }
+.review-type-note > span strong { font-size: 10px; }
+.review-type-note > span small { margin-top: 2px; color: #899793; font-size: 8px; }
+.review-type-note > div { width: 1px; height: 28px; margin: 0 8px; background: var(--line); }
 .empty-queue { min-height: 240px; display: flex; align-items: center; justify-content: center; flex-direction: column; color: #81908c; }
 .empty-queue svg { color: #a8b6b2; }
 .empty-queue strong { margin-top: 12px; color: #52665f; font-size: 12px; }

@@ -76,7 +76,7 @@ function App() {
   const [review, setReview] = useState<HumanReview>({
     id: 'REV-0001',
     reviewerName: 'Industry Expert 01',
-    status: 'pending',
+    status: 'accepted',
     questionReviews: {},
   })
 
@@ -101,7 +101,7 @@ function App() {
     setAnswers({})
     setSubmission(null)
     setReviewIndex(0)
-    setReview({ id: `REV-${String(Date.now()).slice(-6)}`, reviewerName: 'Industry Expert 01', status: 'pending', questionReviews: {} })
+    setReview({ id: `REV-${String(Date.now()).slice(-6)}`, reviewerName: 'Industry Expert 01', status: 'accepted', questionReviews: {} })
     setScreen('assessment')
     window.scrollTo(0, 0)
   }
@@ -125,7 +125,7 @@ function App() {
       questions,
       answers: { ...answers },
     })
-    setReview({ id: `REV-${String(Date.now()).slice(-6)}`, reviewerName: 'Industry Expert 01', status: 'pending', questionReviews: {} })
+    setReview({ id: `REV-${String(Date.now()).slice(-6)}`, reviewerName: 'Industry Expert 01', status: 'accepted', questionReviews: {} })
     setScreen('submitted')
     window.scrollTo(0, 0)
   }
