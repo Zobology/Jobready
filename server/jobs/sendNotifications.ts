@@ -94,6 +94,8 @@ async function run() {
      where n.sent_at is null and n.attempt_count < 5
      order by n.created_at limit 100`,
   )
+  let sent = 0
+  let failed = 0
   for (const notification of pending.rows) {
     try {
       const template = templateFor(notification)
@@ -104,11 +106,15 @@ async function run() {
       })
       if (!result.ok) throw new Error(await result.text())
       await pool.query('update notification_outbox set sent_at=now(), attempt_count=attempt_count+1, last_error=null where id=$1', [notification.id])
+      sent += 1
     } catch (error) {
-      await pool.query('update notification_outbox set attempt_count=attempt_count+1, last_error=$2 where id=$1', [notification.id, String(error).slice(0, 2000)])
+      const message = String(error).slice(0, 2000)
+      failed += 1
+      console.error(`Notification ${notification.id} (${notification.event_type}) failed: ${message}`)
+      await pool.query('update notification_outbox set attempt_count=attempt_count+1, last_error=$2 where id=$1', [notification.id, message])
     }
   }
-  console.log(`Processed ${pending.rowCount ?? 0} notifications`)
+  console.log(`Processed ${pending.rowCount ?? 0} notifications: ${sent} sent, ${failed} failed`)
   await pool.end()
 }
 
