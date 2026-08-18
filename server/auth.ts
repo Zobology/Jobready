@@ -5,6 +5,8 @@ import { pool } from './db.js'
 export interface AuthenticatedUser {
   id: string
   email: string
+  first_name: string | null
+  last_name: string | null
   role: 'candidate' | 'reviewer' | 'admin'
 }
 
@@ -47,7 +49,7 @@ export async function authenticate(request: Request, _response: Response, next: 
     const token = request.cookies?.[cookieName]
     if (!token) return next()
     const result = await pool.query<AuthenticatedUser>(
-      `select u.id, u.email::text, u.role from user_sessions s
+      `select u.id, u.email::text, u.first_name, u.last_name, u.role from user_sessions s
        join users u on u.id = s.user_id
        where s.token_hash = $1 and s.expires_at > now()`,
       [tokenHash(token)],

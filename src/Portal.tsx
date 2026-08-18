@@ -78,6 +78,11 @@ function overallScore(submission: PortalSubmission, answers: Record<string, Asse
   return Math.round(scores.reduce((sum, score) => sum + score, 0) / Math.max(scores.length, 1))
 }
 
+function accountName(database: PortalDatabase, userId: string) {
+  const account = database.accounts.find((item) => item.id === userId)
+  return account ? `${account.firstName || ''} ${account.lastName || ''}`.trim() : ''
+}
+
 export default function Portal() {
   const [database, setDatabase] = useState<PortalDatabase>(() => loadDatabase())
   const [ready, setReady] = useState(false)
@@ -102,6 +107,8 @@ export default function Portal() {
           if (result) {
             setDatabase(result.state)
             setSessionId(result.user.id)
+            const name = accountName(result.state, result.user.id)
+            if (name) setProfile((current) => current.name ? current : { ...current, name })
           } else {
             setDatabase(emptyPortalDatabase())
             setSessionId(null)
@@ -238,10 +245,14 @@ export default function Portal() {
           updateDatabase(nextDatabase)
           saveSession(userId)
           setSessionId(userId)
+          const name = accountName(nextDatabase, userId)
+          if (name) setProfile((current) => current.name ? current : { ...current, name })
         }}
         onServerAuthenticated={(nextDatabase, userId) => {
           updateDatabase(nextDatabase)
           setSessionId(userId)
+          const name = accountName(nextDatabase, userId)
+          if (name) setProfile((current) => current.name ? current : { ...current, name })
         }}
       />
     )
@@ -261,8 +272,8 @@ export default function Portal() {
   const navItems = account.role === 'candidate'
     ? [{ id: 'assessment', label: 'Assessment' }, { id: 'results', label: 'Results' }]
     : account.role === 'reviewer'
-      ? [{ id: 'queue', label: 'Review queue' }]
-      : [{ id: 'dashboard', label: 'Overview' }, { id: 'reviewers', label: 'Reviewers' }, { id: 'adjudication', label: 'Adjudication' }]
+      ? [{ id: 'queue', label: 'Assessment queue' }]
+      : [{ id: 'dashboard', label: 'Overview' }, { id: 'reviewers', label: 'Mentors' }, { id: 'adjudication', label: 'Adjudication' }]
 
   return (
     <div className="portal-shell">
@@ -313,7 +324,7 @@ export default function Portal() {
                 questions={candidateSubmission.questions}
                 answers={candidateSubmission.finalAnswers}
                 reviewerName="Zobology expert panel"
-                onRetake={() => { setStartingNewAssessment(true); setProfile(initialProfile); setCandidateView('profile'); window.scrollTo(0, 0) }}
+                onRetake={() => { setStartingNewAssessment(true); setProfile({ ...initialProfile, name: `${account.firstName || ''} ${account.lastName || ''}`.trim() }); setCandidateView('profile'); window.scrollTo(0, 0) }}
               />
             )}
           </>
@@ -410,7 +421,7 @@ function Landing({ onSignIn, onSignUp, onReviewer }: { onSignIn: () => void; onS
           <article><span>03</span><h3>Reviewed by experts</h3><p>Matched industry professionals score every response against standardized rubrics.</p></article>
         </section>
       </main>
-      <footer className="landing-footer"><Brand /><p>© 2026 Zobology. Job readiness, made visible.</p><button onClick={onReviewer}>Register as a Reviewer <ArrowRight size={13} /></button></footer>
+      <footer className="landing-footer"><Brand /><p>© 2026 Zobology. Job readiness, made visible.</p><button onClick={onReviewer}>Register as a Mentor <ArrowRight size={13} /></button></footer>
     </div>
   )
 }
@@ -436,6 +447,8 @@ function AuthScreen({
 }) {
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
+  const [firstName, setFirstName] = useState('')
+  const [lastName, setLastName] = useState('')
   const [roleIds, setRoleIds] = useState<string[]>([])
   const [industryIds, setIndustryIds] = useState<string[]>([])
   const [error, setError] = useState('')
@@ -455,6 +468,10 @@ function AuthScreen({
       setError('Use a valid email and a password of at least 8 characters.')
       return
     }
+    if (!signInMode && (!firstName.trim() || !lastName.trim())) {
+      setError('Enter your first name and last name.')
+      return
+    }
     if (reviewerMode && (!roleIds.length || !industryIds.length)) {
       setError('Select at least one role and one industry you can assess.')
       return
@@ -465,7 +482,7 @@ function AuthScreen({
       try {
         const result = signInMode
           ? await api.signin(normalizedEmail, password)
-          : await api.signup({ email: normalizedEmail, password, role: reviewerMode ? 'reviewer' : 'candidate', roleIds, industryIds })
+          : await api.signup({ firstName: firstName.trim(), lastName: lastName.trim(), email: normalizedEmail, password, role: reviewerMode ? 'reviewer' : 'candidate', roleIds, industryIds })
         onServerAuthenticated(result.state, result.user.id)
       } catch (serverError) {
         setError((serverError as Error).message)
@@ -490,6 +507,8 @@ function AuthScreen({
     const account: PortalAccount = {
       id: createId('USR'),
       email: normalizedEmail,
+      firstName: firstName.trim(),
+      lastName: lastName.trim(),
       passwordHash,
       role: reviewerMode ? 'reviewer' : 'candidate',
       createdAt: new Date().toISOString(),
@@ -509,8 +528,9 @@ function AuthScreen({
     <div className="auth-page">
       <aside className="auth-story"><button className="back-link" onClick={onBack}>← Back to home</button><Brand /><div><span className="eyebrow"><i /> Zobology intelligence engine</span><h1>{reviewerMode ? 'Help talent become job ready.' : 'Your next role starts with knowing your readiness.'}</h1><p>{reviewerMode ? 'Apply your industry experience to structured, evidence-based candidate evaluations.' : 'Personalized assessments. Human expert review. Actionable readiness insights.'}</p></div><blockquote>“What does job-ready mean for this exact role?”<small>That is the question every Zobology assessment answers.</small></blockquote></aside>
       <main className={reviewerMode ? 'auth-card reviewer-auth-card' : 'auth-card'}>
-        <div className="auth-card-heading"><span>{reviewerMode ? <UserCheck /> : <ShieldCheck />}</span><h2>{signInMode ? 'Welcome back' : reviewerMode ? 'Register as a reviewer' : 'Create your account'}</h2><p>{signInMode ? 'Sign in to continue to your workspace.' : reviewerMode ? 'Tell us where your expertise is strongest.' : 'Start with your email. Your profile comes next.'}</p></div>
+        <div className="auth-card-heading"><span>{reviewerMode ? <UserCheck /> : <ShieldCheck />}</span><h2>{signInMode ? 'Welcome back' : reviewerMode ? 'Register as a mentor' : 'Create your account'}</h2><p>{signInMode ? 'Sign in to continue to your workspace.' : reviewerMode ? 'Tell us where your expertise is strongest.' : 'Start with your name and email. Your profile comes next.'}</p></div>
         <form onSubmit={submit}>
+          {!signInMode && <div className="field-grid"><label className="field"><span>First name</span><input type="text" value={firstName} onChange={(event) => setFirstName(event.target.value)} placeholder="First name" autoComplete="given-name" maxLength={80} /></label><label className="field"><span>Last name</span><input type="text" value={lastName} onChange={(event) => setLastName(event.target.value)} placeholder="Last name" autoComplete="family-name" maxLength={80} /></label></div>}
           <label className="field"><span>Email address</span><input type="email" value={email} onChange={(event) => setEmail(event.target.value)} placeholder="you@example.com" autoComplete="email" /></label>
           <label className="field"><span>{signInMode ? 'Password' : 'Set password'}</span><input type="password" value={password} onChange={(event) => setPassword(event.target.value)} placeholder="Minimum 8 characters" autoComplete={signInMode ? 'current-password' : 'new-password'} /></label>
           {reviewerMode && (
@@ -523,7 +543,7 @@ function AuthScreen({
           <button className="primary-button" disabled={busy}>{busy ? 'Please wait…' : signInMode ? 'Sign in' : reviewerMode ? 'Submit application' : 'Create account'} <ArrowRight size={16} /></button>
         </form>
         <p className="auth-switch">{signInMode ? <>New to Zobology? <button onClick={() => onSwitch('signup')}>Create an account</button></> : <>Already have an account? <button onClick={() => onSwitch('signin')}>Sign in</button></>}</p>
-        {signInMode && !backendEnabled && <div className="demo-access"><strong>Preview accounts</strong><span>Admin: admin@zobology.in / Admin@123</span><span>Reviewer: expert1@zobology.in / Reviewer@123</span></div>}
+        {signInMode && !backendEnabled && <div className="demo-access"><strong>Preview accounts</strong><span>Admin: admin@zobology.in / Admin@123</span><span>Mentor: expert1@zobology.in / Mentor@123</span></div>}
       </main>
     </div>
   )
@@ -537,8 +557,10 @@ function MultiSelect({ label, hint, options, selected, onToggle }: { label: stri
 }
 
 function PortalHeader({ account, items, active, mobileMenu, onMenu, onNavigate, onSignOut }: { account: PortalAccount; items: { id: string; label: string }[]; active: string; mobileMenu: boolean; onMenu: () => void; onNavigate: (id: string) => void; onSignOut: () => void }) {
+  const displayName = `${account.firstName || ''} ${account.lastName || ''}`.trim() || account.email
+  const roleLabel = account.role === 'reviewer' ? 'mentor' : account.role
   return (
-    <header className="portal-header"><button className="brand-button" onClick={() => onNavigate(items[0].id)}><Brand /></button><nav className={mobileMenu ? 'portal-nav open' : 'portal-nav'}>{items.map((item) => <button key={item.id} className={active === item.id || (item.id === 'assessment' && ['profile', 'assessment', 'waiting'].includes(active)) ? 'active' : ''} onClick={() => onNavigate(item.id)}>{item.label}</button>)}</nav><div className="portal-account"><button className="notification-button" aria-label="Notifications"><Bell size={18} /></button><span><i>{account.email[0].toUpperCase()}</i><b>{account.email}</b><small>{account.role}</small></span><button className="logout-button" onClick={onSignOut} title="Sign out"><LogOut size={17} /></button><button className="menu-button" onClick={onMenu}>{mobileMenu ? <X /> : <Menu />}</button></div></header>
+    <header className="portal-header"><button className="brand-button" onClick={() => onNavigate(items[0].id)}><Brand /></button><nav className={mobileMenu ? 'portal-nav open' : 'portal-nav'}>{items.map((item) => <button key={item.id} className={active === item.id || (item.id === 'assessment' && ['profile', 'assessment', 'waiting'].includes(active)) ? 'active' : ''} onClick={() => onNavigate(item.id)}>{item.label}</button>)}</nav><div className="portal-account"><button className="notification-button" aria-label="Notifications"><Bell size={18} /></button><span><i>{displayName[0].toUpperCase()}</i><b>{displayName}</b><small>{roleLabel} · {account.email}</small></span><button className="logout-button" onClick={onSignOut} title="Sign out"><LogOut size={17} /></button><button className="menu-button" onClick={onMenu}>{mobileMenu ? <X /> : <Menu />}</button></div></header>
   )
 }
 
@@ -546,19 +568,19 @@ function CandidateWaiting({ submission }: { submission: PortalSubmission }) {
   const target = new Date(new Date(submission.submittedAt).getTime() + 24 * 60 * 60 * 1000)
   const completed = submission.status === 'published'
   return (
-    <div className="status-page"><section className="status-card"><div className="status-icon"><CheckCircle2 size={32} /></div><div className="eyebrow"><span /> Assessment submitted</div><h1>Thank you, {submission.profile.name}.</h1><p className="status-lead">Please wait for your result. Our industry experts will complete the evaluation within 24 hours.</p><div className="status-timeline"><div className="done"><i><Check size={13} /></i><span><b>Assessment completed</b><small>{new Date(submission.submittedAt).toLocaleString()}</small></span></div><div className={submission.status !== 'awaiting_review' ? 'active' : ''}><i>2</i><span><b>Expert evaluation</b><small>{submission.assignedReviewerIds.length ? `${submission.assignedReviewerIds.length} reviewers assigned` : 'Matching the right reviewers'}</small></span></div><div className={completed ? 'done' : ''}><i>{completed ? <Check size={13} /> : 3}</i><span><b>Results published</b><small>Expected by {target.toLocaleString()}</small></span></div></div><div className="submission-reference"><span><small>Submission ID</small><b>{submission.id}</b></span><span><small>Target profile</small><b>{submission.role.name} · {submission.industry.name}</b></span><span><small>Status</small><b>{submission.status.replace('_', ' ')}</b></span></div><div className="human-review-note"><ShieldCheck size={20} /><span><strong>Why human review?</strong>Your subjective, audio, and simulation responses are evaluated as workplace evidence—not marked like objective test answers.</span></div></section></div>
+    <div className="status-page"><section className="status-card"><div className="status-icon"><CheckCircle2 size={32} /></div><div className="eyebrow"><span /> Assessment submitted</div><h1>Thank you, {submission.profile.name}.</h1><p className="status-lead">Please wait for your result. Our industry experts will complete the evaluation within 24 hours.</p><div className="status-timeline"><div className="done"><i><Check size={13} /></i><span><b>Assessment completed</b><small>{new Date(submission.submittedAt).toLocaleString()}</small></span></div><div className={submission.status !== 'awaiting_review' ? 'active' : ''}><i>2</i><span><b>Expert evaluation</b><small>{submission.assignedReviewerIds.length ? `${submission.assignedReviewerIds.length} mentors assigned` : 'Matching the right mentors'}</small></span></div><div className={completed ? 'done' : ''}><i>{completed ? <Check size={13} /> : 3}</i><span><b>Results published</b><small>Expected by {target.toLocaleString()}</small></span></div></div><div className="submission-reference"><span><small>Submission ID</small><b>{submission.id}</b></span><span><small>Target profile</small><b>{submission.role.name} · {submission.industry.name}</b></span><span><small>Status</small><b>{submission.status.replace('_', ' ')}</b></span></div><div className="human-review-note"><ShieldCheck size={20} /><span><strong>Why human review?</strong>Your subjective, audio, and simulation responses are evaluated as workplace evidence—not marked like objective test answers.</span></div></section></div>
   )
 }
 
 function ReviewerPending({ profile }: { profile: ReviewerProfile }) {
-  return <div className="status-page"><section className="status-card compact-status"><div className="status-icon pending"><Clock3 size={30} /></div><div className="eyebrow"><span /> Application received</div><h1>Reviewer approval pending</h1><p className="status-lead">Our admin team will verify your application. Your matched review queue will become available once approved.</p><div className="submission-reference"><span><small>Roles selected</small><b>{profile.roleIds.length}</b></span><span><small>Industries selected</small><b>{profile.industryIds.length}</b></span><span><small>Status</small><b>{profile.status}</b></span></div></section></div>
+  return <div className="status-page"><section className="status-card compact-status"><div className="status-icon pending"><Clock3 size={30} /></div><div className="eyebrow"><span /> Application received</div><h1>Mentor approval pending</h1><p className="status-lead">Our admin team will verify your application. Your matched assessment queue will become available once approved.</p><div className="submission-reference"><span><small>Roles selected</small><b>{profile.roleIds.length}</b></span><span><small>Industries selected</small><b>{profile.industryIds.length}</b></span><span><small>Status</small><b>{profile.status}</b></span></div></section></div>
 }
 
 function ReviewerDashboard({ account, database, onOpen }: { account: PortalAccount; database: PortalDatabase; onOpen: (reviewId: string) => void }) {
   const reviews = database.reviews.filter((item) => item.reviewerId === account.id)
   const open = reviews.filter((item) => item.status !== 'completed')
   return (
-    <div className="workspace-page"><div className="workspace-heading"><div><div className="eyebrow"><span /> Expert workspace</div><h1>Your review queue</h1><p>Assignments are matched to your approved role and industry expertise.</p></div><div className="workspace-stats"><Stat icon={<ClipboardCheck />} label="Open reviews" value={open.length} /><Stat icon={<CheckCircle2 />} label="Completed" value={reviews.length - open.length} /></div></div><div className="queue-table portal-queue"><div className="queue-table-head"><span>Candidate</span><span>Target profile</span><span>Assigned</span><span>Progress</span><span>Status</span><span /></div>{reviews.length === 0 ? <div className="empty-queue"><ClipboardCheck size={28} /><strong>No matched reviews yet</strong><span>We’ll notify you by email when a suitable assessment is assigned.</span></div> : reviews.map((review) => { const submission = database.submissions.find((item) => item.id === review.submissionId); if (!submission) return null; const progress = Object.keys(review.questionReviews).length; return <div className="queue-row" key={review.id}><div className="candidate-cell"><i>{submission.profile.name[0]}</i><span><strong>{submission.profile.name}</strong><small>{submission.id}</small></span></div><div><strong>{submission.role.name}</strong><small>{submission.industry.name} · {submission.profile.level}</small></div><div><strong>{new Date(submission.submittedAt).toLocaleDateString()}</strong><small>Due within 24 hours</small></div><div className="queue-progress"><strong>{progress}/{submission.questions.length}</strong><span><i style={{ width: `${progress / submission.questions.length * 100}%` }} /></span></div><div><span className={`review-status ${review.status}`}>{review.status.replace('_', ' ')}</span></div><button className="review-action" onClick={() => onOpen(review.id)}>{review.status === 'completed' ? 'View' : progress ? 'Continue' : 'Start'} <ArrowRight size={14} /></button></div> })}</div></div>
+    <div className="workspace-page"><div className="workspace-heading"><div><div className="eyebrow"><span /> Mentor workspace</div><h1>Your assessment queue</h1><p>Assignments are matched to your approved role and industry expertise.</p></div><div className="workspace-stats"><Stat icon={<ClipboardCheck />} label="Open assessments" value={open.length} /><Stat icon={<CheckCircle2 />} label="Completed" value={reviews.length - open.length} /></div></div><div className="queue-table portal-queue"><div className="queue-table-head"><span>Candidate</span><span>Target profile</span><span>Assigned</span><span>Progress</span><span>Status</span><span /></div>{reviews.length === 0 ? <div className="empty-queue"><ClipboardCheck size={28} /><strong>No matched assessments yet</strong><span>We’ll notify you by email when a suitable assessment is assigned.</span></div> : reviews.map((review) => { const submission = database.submissions.find((item) => item.id === review.submissionId); if (!submission) return null; const progress = Object.keys(review.questionReviews).length; return <div className="queue-row" key={review.id}><div className="candidate-cell"><i>{submission.profile.name[0]}</i><span><strong>{submission.profile.name}</strong><small>{submission.id}</small></span></div><div><strong>{submission.role.name}</strong><small>{submission.industry.name} · {submission.profile.level}</small></div><div><strong>{new Date(submission.submittedAt).toLocaleDateString()}</strong><small>Due within 24 hours</small></div><div className="queue-progress"><strong>{progress}/{submission.questions.length}</strong><span><i style={{ width: `${progress / submission.questions.length * 100}%` }} /></span></div><div><span className={`review-status ${review.status}`}>{review.status.replace('_', ' ')}</span></div><button className="review-action" onClick={() => onOpen(review.id)}>{review.status === 'completed' ? 'View' : progress ? 'Continue' : 'Start'} <ArrowRight size={14} /></button></div> })}</div></div>
   )
 }
 
@@ -584,7 +606,8 @@ function AdminPanel({ view, database, onView, onUpdate, onReviewerDecision, onPu
         const openSubmissions = next.submissions.filter((submission) => submission.status !== 'published' && submission.assignedReviewerIds.length < 2 && (reviewer.roleIds.includes(submission.role.id) || reviewer.industryIds.includes(submission.industry.id)))
         openSubmissions.forEach((submission) => {
           if (next.reviews.some((review) => review.submissionId === submission.id && review.reviewerId === userId)) return
-          const review: AssignedReview = { id: createId('REV'), submissionId: submission.id, reviewerId: userId, reviewerName: next.accounts.find((account) => account.id === userId)?.email.split('@')[0] ?? 'Industry expert', status: 'pending', questionReviews: {} }
+          const mentorAccount = next.accounts.find((account) => account.id === userId)
+          const review: AssignedReview = { id: createId('REV'), submissionId: submission.id, reviewerId: userId, reviewerName: mentorAccount ? `${mentorAccount.firstName || ''} ${mentorAccount.lastName || ''}`.trim() || mentorAccount.email.split('@')[0] : 'Industry mentor', status: 'pending', questionReviews: {} }
           next = { ...next, reviews: [...next.reviews, review], submissions: next.submissions.map((item) => item.id === submission.id ? { ...item, assignedReviewerIds: [...item.assignedReviewerIds, userId].slice(0, 2), status: 'under_review' } : item) }
         })
       }
@@ -604,8 +627,8 @@ function AdminPanel({ view, database, onView, onUpdate, onReviewerDecision, onPu
   }
 
   return (
-    <div className="admin-page"><div className="workspace-heading"><div><div className="eyebrow"><span /> Admin control centre</div><h1>{view === 'dashboard' ? 'Operations overview' : view === 'reviewers' ? 'Reviewer approvals' : 'Score adjudication'}</h1><p>Quality control for reviewer access, assessment assignment, and final scores.</p></div></div>
-      {view === 'dashboard' && <><div className="admin-metrics"><Metric label="Assessments" value={database.submissions.length} icon={<ClipboardCheck />} /><Metric label="Pending reviewers" value={pendingReviewers.length} icon={<Users />} alert={pendingReviewers.length > 0} /><Metric label="Awaiting adjudication" value={adjudications.length} icon={<ScaleIcon />} alert={adjudications.length > 0} /><Metric label="Published results" value={published.length} icon={<BarChart3 />} /></div><div className="admin-actions"><button onClick={() => onView('reviewers')}><UserCheck /><span><b>Review reviewer applications</b><small>{pendingReviewers.length} pending approval</small></span><ArrowRight /></button><button onClick={() => onView('adjudication')}><ScaleIcon /><span><b>Resolve dual reviews</b><small>{adjudications.length} assessments need a final decision</small></span><ArrowRight /></button></div></>}
+    <div className="admin-page"><div className="workspace-heading"><div><div className="eyebrow"><span /> Admin control centre</div><h1>{view === 'dashboard' ? 'Operations overview' : view === 'reviewers' ? 'Mentor approvals' : 'Score adjudication'}</h1><p>Quality control for mentor access, assessment assignment, and final scores.</p></div></div>
+      {view === 'dashboard' && <><div className="admin-metrics"><Metric label="Assessments" value={database.submissions.length} icon={<ClipboardCheck />} /><Metric label="Pending mentors" value={pendingReviewers.length} icon={<Users />} alert={pendingReviewers.length > 0} /><Metric label="Awaiting adjudication" value={adjudications.length} icon={<ScaleIcon />} alert={adjudications.length > 0} /><Metric label="Published results" value={published.length} icon={<BarChart3 />} /></div><div className="admin-actions"><button onClick={() => onView('reviewers')}><UserCheck /><span><b>Review mentor applications</b><small>{pendingReviewers.length} pending approval</small></span><ArrowRight /></button><button onClick={() => onView('adjudication')}><ScaleIcon /><span><b>Resolve dual reviews</b><small>{adjudications.length} assessments need a final decision</small></span><ArrowRight /></button></div></>}
       {view === 'reviewers' && <ReviewerApprovals database={database} onDecision={approveReviewer} />}
       {view === 'adjudication' && <AdjudicationQueue database={database} onPublish={publish} />}
     </div>
@@ -619,7 +642,7 @@ function Metric({ label, value, icon, alert }: { label: string; value: number; i
 function ScaleIcon() { return <span className="scale-icon">⚖</span> }
 
 function ReviewerApprovals({ database, onDecision }: { database: PortalDatabase; onDecision: (userId: string, status: 'approved' | 'rejected') => void }) {
-  return <div className="approval-list">{database.reviewers.length === 0 ? <div className="empty-admin">No reviewer applications.</div> : database.reviewers.map((profile) => { const account = database.accounts.find((item) => item.id === profile.userId); return <article key={profile.userId}><div className="reviewer-identity"><i>{account?.email[0].toUpperCase()}</i><span><b>{account?.email}</b><small>Applied {new Date(profile.appliedAt).toLocaleDateString()}</small></span><em className={`approval-status ${profile.status}`}>{profile.status}</em></div><div className="expertise-tags"><div><small>Roles</small><p>{profile.roleIds.map((id) => roles.find((item) => item.id === id)?.name).filter(Boolean).map((name) => <span key={name}>{name}</span>)}</p></div><div><small>Industries</small><p>{profile.industryIds.map((id) => industries.find((item) => item.id === id)?.name).filter(Boolean).map((name) => <span key={name}>{name}</span>)}</p></div></div>{profile.status === 'pending' && <div className="approval-actions"><button className="reject-button" onClick={() => onDecision(profile.userId, 'rejected')}>Reject</button><button className="approve-button" onClick={() => onDecision(profile.userId, 'approved')}><Check size={15} /> Approve reviewer</button></div>}</article> })}</div>
+  return <div className="approval-list">{database.reviewers.length === 0 ? <div className="empty-admin">No mentor applications.</div> : database.reviewers.map((profile) => { const account = database.accounts.find((item) => item.id === profile.userId); const name = account ? `${account.firstName || ''} ${account.lastName || ''}`.trim() : ''; return <article key={profile.userId}><div className="reviewer-identity"><i>{(name || account?.email || 'M')[0].toUpperCase()}</i><span><b>{name || account?.email}</b><small>{account?.email} · Applied {new Date(profile.appliedAt).toLocaleDateString()}</small></span><em className={`approval-status ${profile.status}`}>{profile.status}</em></div><div className="expertise-tags"><div><small>Roles</small><p>{profile.roleIds.map((id) => roles.find((item) => item.id === id)?.name).filter(Boolean).map((name) => <span key={name}>{name}</span>)}</p></div><div><small>Industries</small><p>{profile.industryIds.map((id) => industries.find((item) => item.id === id)?.name).filter(Boolean).map((name) => <span key={name}>{name}</span>)}</p></div></div>{profile.status === 'pending' && <div className="approval-actions"><button className="reject-button" onClick={() => onDecision(profile.userId, 'rejected')}>Reject</button><button className="approve-button" onClick={() => onDecision(profile.userId, 'approved')}><Check size={15} /> Approve mentor</button></div>}</article> })}</div>
 }
 
 function AdjudicationQueue({ database, onPublish }: { database: PortalDatabase; onPublish: (submission: PortalSubmission, choice: string) => void }) {
@@ -631,5 +654,5 @@ function AdjudicationCard({ submission, reviews, onPublish }: { submission: Port
   const [choice, setChoice] = useState('average')
   const scores = reviews.map((review) => ({ review, score: overallScore(submission, scoreReview(submission, review)) }))
   const average = Math.round(scores.reduce((sum, item) => sum + item.score, 0) / scores.length)
-  return <article className="adjudication-card"><div className="adjudication-head"><div><small>{submission.id}</small><h3>{submission.profile.name}</h3><p>{submission.role.name} · {submission.industry.name}</p></div><span className="review-status in_review">Admin decision</span></div><div className="score-comparison">{scores.map((item, index) => <label key={item.review.id} className={choice === item.review.id ? 'selected' : ''}><input type="radio" name={submission.id} value={item.review.id} checked={choice === item.review.id} onChange={() => setChoice(item.review.id)} /><span><small>Reviewer {index + 1}</small><b>{item.score}</b><em>{item.review.reviewerName}</em></span></label>)}<label className={choice === 'average' ? 'selected average' : 'average'}><input type="radio" name={submission.id} checked={choice === 'average'} onChange={() => setChoice('average')} /><span><small>Panel average</small><b>{average}</b><em>Recommended</em></span></label></div><div className="variance-note"><Sparkles size={16} /><span><b>Score variance: {Math.abs((scores[0]?.score ?? 0) - (scores[1]?.score ?? 0))} points</b><small>Review individual evidence and select the defensible final outcome.</small></span></div><button className="primary-button compact" onClick={() => onPublish(submission, choice)}>Approve and publish result <ArrowRight size={16} /></button></article>
+  return <article className="adjudication-card"><div className="adjudication-head"><div><small>{submission.id}</small><h3>{submission.profile.name}</h3><p>{submission.role.name} · {submission.industry.name}</p></div><span className="review-status in_review">Admin decision</span></div><div className="score-comparison">{scores.map((item, index) => <label key={item.review.id} className={choice === item.review.id ? 'selected' : ''}><input type="radio" name={submission.id} value={item.review.id} checked={choice === item.review.id} onChange={() => setChoice(item.review.id)} /><span><small>Mentor {index + 1}</small><b>{item.score}</b><em>{item.review.reviewerName}</em></span></label>)}<label className={choice === 'average' ? 'selected average' : 'average'}><input type="radio" name={submission.id} checked={choice === 'average'} onChange={() => setChoice('average')} /><span><small>Panel average</small><b>{average}</b><em>Recommended</em></span></label></div><div className="variance-note"><Sparkles size={16} /><span><b>Score variance: {Math.abs((scores[0]?.score ?? 0) - (scores[1]?.score ?? 0))} points</b><small>Review individual evidence and select the defensible final outcome.</small></span></div><button className="primary-button compact" onClick={() => onPublish(submission, choice)}>Approve and publish result <ArrowRight size={16} /></button></article>
 }

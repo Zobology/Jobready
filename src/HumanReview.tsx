@@ -50,7 +50,7 @@ export function SubmissionConfirmation({
         <div className="eyebrow"><span /> {completed ? 'Expert review complete' : 'Assessment submitted'}</div>
         <h1>{completed ? `${profile.name}, your reviewed results are ready.` : `Thank you, ${profile.name}.`}</h1>
         <p>{completed
-          ? 'Your readiness scores now reflect rubric-level evaluation by a human reviewer.'
+          ? 'Your readiness scores now reflect rubric-level evaluation by a human mentor.'
           : 'Your responses have been placed in the expert review queue. No automated readiness score has been finalized.'}</p>
 
         <div className="submission-summary">
@@ -63,7 +63,7 @@ export function SubmissionConfirmation({
         <div className="submission-actions">
           {completed
             ? <button className="primary-button compact" onClick={onViewResults}>View reviewed results <ArrowRight size={17} /></button>
-            : <button className="secondary-button" onClick={onOpenReview}><UserCheck size={17} /> Open reviewer workspace</button>}
+            : <button className="secondary-button" onClick={onOpenReview}><UserCheck size={17} /> Open mentor workspace</button>}
         </div>
       </section>
     </div>
@@ -216,7 +216,7 @@ export function ReviewWorkspace({
               </div>
             ))}
           </div>
-          <label className="review-comment"><span>Reviewer feedback <small>Recommended</small></span><textarea rows={3} value={questionReview.comment} onChange={(event) => updateComment(event.target.value)} placeholder="Record evidence, strengths, gaps, and actionable feedback…" /></label>
+          <label className="review-comment"><span>Mentor feedback <small>Recommended</small></span><textarea rows={3} value={questionReview.comment} onChange={(event) => updateComment(event.target.value)} placeholder="Record evidence, strengths, gaps, and actionable feedback…" /></label>
         </section>
 
         <div className="review-navigation">

@@ -3,7 +3,7 @@ import { pool } from './db.js'
 import type { AuthenticatedUser } from './auth.js'
 
 function account(row: Record<string, unknown>) {
-  return { id: row.id, email: row.email, passwordHash: '', role: row.role, createdAt: row.created_at }
+  return { id: row.id, email: row.email, firstName: row.first_name ?? '', lastName: row.last_name ?? '', passwordHash: '', role: row.role, createdAt: row.created_at }
 }
 
 function reviewer(row: Record<string, unknown>) {
@@ -39,7 +39,7 @@ function review(row: Record<string, unknown>) {
     id: row.id,
     submissionId: row.assessment_id,
     reviewerId: row.reviewer_id,
-    reviewerName: String(row.reviewer_email ?? 'Industry expert').split('@')[0],
+    reviewerName: String(row.reviewer_name || row.reviewer_email || 'Industry mentor'),
     status: row.status,
     questionReviews: row.rubric_scores ?? {},
     startedAt: row.started_at ?? undefined,
@@ -55,7 +55,7 @@ const submissionSelect = `
 
 export async function loadPortalState(user: AuthenticatedUser) {
   const accounts = user.role === 'admin'
-    ? (await pool.query('select id, email::text, role, created_at from users order by created_at')).rows.map(account)
+    ? (await pool.query('select id, email::text, first_name, last_name, role, created_at from users order by created_at')).rows.map(account)
     : [account({ ...user, created_at: new Date().toISOString() })]
 
   const reviewerRows = user.role === 'admin'
@@ -74,9 +74,9 @@ export async function loadPortalState(user: AuthenticatedUser) {
   const submissionRows = (await pool.query(submissionQuery, user.role === 'admin' ? [] : [user.id])).rows
 
   const reviewQuery = user.role === 'admin'
-    ? `select ra.*, u.email::text reviewer_email from review_assignments ra join users u on u.id = ra.reviewer_id order by ra.assigned_at desc`
+    ? `select ra.*, u.email::text reviewer_email, coalesce(nullif(trim(concat_ws(' ', u.first_name, u.last_name)), ''), split_part(u.email::text, '@', 1)) reviewer_name from review_assignments ra join users u on u.id = ra.reviewer_id order by ra.assigned_at desc`
     : user.role === 'reviewer'
-      ? `select ra.*, u.email::text reviewer_email from review_assignments ra join users u on u.id = ra.reviewer_id where ra.reviewer_id = $1 order by ra.assigned_at desc`
+      ? `select ra.*, u.email::text reviewer_email, coalesce(nullif(trim(concat_ws(' ', u.first_name, u.last_name)), ''), split_part(u.email::text, '@', 1)) reviewer_name from review_assignments ra join users u on u.id = ra.reviewer_id where ra.reviewer_id = $1 order by ra.assigned_at desc`
       : null
   const reviewRows = reviewQuery ? (await pool.query(reviewQuery, user.role === 'admin' ? [] : [user.id])).rows : []
 

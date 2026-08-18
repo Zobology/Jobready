@@ -1,7 +1,7 @@
 import type { HumanReview } from './reviewTypes'
 import type { PortalDatabase, PortalSubmission } from './portalTypes'
 
-interface StateResponse { state: PortalDatabase; user: { id: string; email: string; role: 'candidate' | 'reviewer' | 'admin' } }
+interface StateResponse { state: PortalDatabase; user: { id: string; email: string; firstName: string; lastName: string; role: 'candidate' | 'reviewer' | 'admin' } }
 
 async function request<T>(path: string, init: RequestInit = {}) {
   const response = await fetch(`/api${path}`, {
@@ -25,7 +25,7 @@ export const api = {
     if (!response.ok) throw new Error(payload.error || 'Unable to load your account')
     return payload
   },
-  signup(input: { email: string; password: string; role: 'candidate' | 'reviewer'; roleIds?: string[]; industryIds?: string[] }) {
+  signup(input: { firstName: string; lastName: string; email: string; password: string; role: 'candidate' | 'reviewer'; roleIds?: string[]; industryIds?: string[] }) {
     return request<StateResponse>('/auth/signup', { method: 'POST', body: JSON.stringify(input) })
   },
   signin(email: string, password: string) {

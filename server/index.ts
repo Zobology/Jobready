@@ -8,6 +8,7 @@ import helmet from 'helmet'
 import multer from 'multer'
 import { z } from 'zod'
 import { authenticate, createSession, destroySession, requireRole, requireUser } from './auth.js'
+import type { AuthenticatedUser } from './auth.js'
 import { pool, transaction } from './db.js'
 import { assignBestReviewers, loadPortalState } from './state.js'
 import { readFile, storageConfigured, uploadFile } from './storage.js'
@@ -39,7 +40,16 @@ app.use((request, response, next) => {
 
 const authLimit = rateLimit({ windowMs: 15 * 60_000, limit: 20, standardHeaders: true, legacyHeaders: false })
 const credentialsSchema = z.object({ email: z.string().email().max(254), password: z.string().min(8).max(128) })
+const publicUser = (user: AuthenticatedUser) => ({
+  id: user.id,
+  email: user.email,
+  firstName: user.first_name ?? '',
+  lastName: user.last_name ?? '',
+  role: user.role,
+})
 const signupSchema = credentialsSchema.extend({
+  firstName: z.string().trim().min(1).max(80),
+  lastName: z.string().trim().min(1).max(80),
   role: z.enum(['candidate', 'reviewer']),
   roleIds: z.array(z.string()).min(1).max(5).optional(),
   industryIds: z.array(z.string()).min(1).max(5).optional(),
@@ -56,27 +66,33 @@ app.post('/api/auth/signup', authLimit, async (request, response, next) => {
   try {
     const input = signupSchema.parse(request.body)
     if (input.role === 'reviewer' && (!input.roleIds?.length || !input.industryIds?.length)) {
-      return response.status(400).json({ error: 'Reviewer expertise is required' })
+      return response.status(400).json({ error: 'Mentor expertise is required' })
     }
     const passwordHash = await bcrypt.hash(input.password, 12)
     const userId = await transaction(async (client) => {
       const inserted = await client.query<{ id: string }>(
-        'insert into users (email, password_hash, role) values ($1, $2, $3) returning id',
-        [input.email.toLowerCase(), passwordHash, input.role],
+        'insert into users (email, password_hash, first_name, last_name, role) values ($1, $2, $3, $4, $5) returning id',
+        [input.email.toLowerCase(), passwordHash, input.firstName, input.lastName, input.role],
       )
       if (input.role === 'reviewer') {
         await client.query('insert into reviewer_profiles (user_id, role_ids, industry_ids) values ($1, $2, $3)', [inserted.rows[0].id, input.roleIds, input.industryIds])
         await client.query(
           `insert into notification_outbox (recipient_id, event_type, payload)
-           values ($1, 'reviewer_application_received', jsonb_build_object('subject', 'We received your reviewer application'))`,
+           values ($1, 'reviewer_application_received', jsonb_build_object('subject', 'We received your mentor application'))`,
+          [inserted.rows[0].id],
+        )
+      } else {
+        await client.query(
+          `insert into notification_outbox (recipient_id, event_type, payload)
+           values ($1, 'candidate_welcome', jsonb_build_object('subject', 'Welcome to Zobology'))`,
           [inserted.rows[0].id],
         )
       }
       return inserted.rows[0].id
     })
     await createSession(userId, response)
-    const user = { id: userId, email: input.email.toLowerCase(), role: input.role }
-    response.status(201).json({ state: await loadPortalState(user), user })
+    const user: AuthenticatedUser = { id: userId, email: input.email.toLowerCase(), first_name: input.firstName, last_name: input.lastName, role: input.role }
+    response.status(201).json({ state: await loadPortalState(user), user: publicUser(user) })
   } catch (error) {
     if ((error as { code?: string }).code === '23505') return response.status(409).json({ error: 'An account with this email already exists' })
     next(error)
@@ -86,14 +102,14 @@ app.post('/api/auth/signup', authLimit, async (request, response, next) => {
 app.post('/api/auth/signin', authLimit, async (request, response, next) => {
   try {
     const input = credentialsSchema.parse(request.body)
-    const result = await pool.query<{ id: string; email: string; password_hash: string; role: 'candidate' | 'reviewer' | 'admin' }>(
-      'select id, email::text, password_hash, role from users where email = $1',
+    const result = await pool.query<{ id: string; email: string; first_name: string | null; last_name: string | null; password_hash: string; role: 'candidate' | 'reviewer' | 'admin' }>(
+      'select id, email::text, first_name, last_name, password_hash, role from users where email = $1',
       [input.email.toLowerCase()],
     )
     const user = result.rows[0]
     if (!user || !await bcrypt.compare(input.password, user.password_hash)) return response.status(401).json({ error: 'Email or password is incorrect' })
     await createSession(user.id, response)
-    response.json({ state: await loadPortalState(user), user: { id: user.id, email: user.email, role: user.role } })
+    response.json({ state: await loadPortalState(user), user: publicUser(user) })
   } catch (error) { next(error) }
 })
 
@@ -102,7 +118,7 @@ app.post('/api/auth/signout', requireUser, async (request, response, next) => {
 })
 
 app.get('/api/state', requireUser, async (request, response, next) => {
-  try { response.json({ state: await loadPortalState(request.user!), user: request.user }) } catch (error) { next(error) }
+  try { response.json({ state: await loadPortalState(request.user!), user: publicUser(request.user!) }) } catch (error) { next(error) }
 })
 
 const profileSchema = z.object({
@@ -188,7 +204,7 @@ app.post('/api/candidate/assessments', requireRole('candidate'), async (request,
       await client.query(`insert into audit_log (actor_id, action, entity_type, entity_id) values ($1,'assessment_submitted','assessment',$2)`, [request.user!.id, assessmentId])
       return assessmentId
     })
-    response.status(201).json({ id: result, state: await loadPortalState(request.user!), user: request.user })
+    response.status(201).json({ id: result, state: await loadPortalState(request.user!), user: publicUser(request.user!) })
   } catch (error) {
     if ((error as { code?: string }).code === '23505') return response.status(409).json({ error: 'You already have an assessment awaiting completion' })
     next(error)
@@ -213,7 +229,7 @@ app.put('/api/reviewer/reviews/:id', requireRole('reviewer'), async (request, re
         if (Number(count.rows[0].count) >= 2) await client.query('update assessments set status=\'adjudication\' where id=$1', [updated.rows[0].assessment_id])
       }
     })
-    response.json({ state: await loadPortalState(request.user!), user: request.user })
+    response.json({ state: await loadPortalState(request.user!), user: publicUser(request.user!) })
   } catch (error) { next(error) }
 })
 
@@ -226,11 +242,11 @@ app.patch('/api/admin/reviewers/:id', requireRole('admin'), async (request, resp
          approved_by=$2 where user_id=$3 returning user_id`,
         [status, request.user!.id, request.params.id],
       )
-      if (!updated.rows[0]) throw Object.assign(new Error('Reviewer not found'), { status: 404 })
+      if (!updated.rows[0]) throw Object.assign(new Error('Mentor not found'), { status: 404 })
       if (status === 'approved') {
         await client.query(
           `insert into notification_outbox (recipient_id,event_type,payload)
-           values ($1,'reviewer_approved',jsonb_build_object('subject','Your reviewer profile is approved'))`,
+           values ($1,'reviewer_approved',jsonb_build_object('subject','Your mentor profile is approved'))`,
           [request.params.id],
         )
         const profile = (await client.query<{ role_ids: string[]; industry_ids: string[] }>('select role_ids, industry_ids from reviewer_profiles where user_id=$1', [request.params.id])).rows[0]
@@ -259,13 +275,13 @@ app.patch('/api/admin/reviewers/:id', requireRole('admin'), async (request, resp
       } else {
         await client.query(
           `insert into notification_outbox (recipient_id,event_type,payload)
-           values ($1,'reviewer_rejected',jsonb_build_object('subject','Update on your reviewer application'))`,
+           values ($1,'reviewer_rejected',jsonb_build_object('subject','Update on your mentor application'))`,
           [request.params.id],
         )
       }
       await client.query(`insert into audit_log(actor_id,action,entity_type,entity_id,metadata) values($1,'reviewer_decision','reviewer',$2,jsonb_build_object('status',$3::text))`, [request.user!.id, request.params.id, status])
     })
-    response.json({ state: await loadPortalState(request.user!), user: request.user })
+    response.json({ state: await loadPortalState(request.user!), user: publicUser(request.user!) })
   } catch (error) { next(error) }
 })
 
@@ -298,7 +314,7 @@ app.post('/api/admin/assessments/:id/publish', requireRole('admin'), async (requ
       await client.query(`insert into notification_outbox(recipient_id,event_type,payload) values($1,'results_ready',jsonb_build_object('assessment_id',$2::uuid,'subject','Your Zobology results are ready'))`, [assessment.candidate_id, assessment.id])
       await client.query(`insert into audit_log(actor_id,action,entity_type,entity_id,metadata) values($1,'result_published','assessment',$2,jsonb_build_object('choice',$3::text))`, [request.user!.id, assessment.id, choice])
     })
-    response.json({ state: await loadPortalState(request.user!), user: request.user })
+    response.json({ state: await loadPortalState(request.user!), user: publicUser(request.user!) })
   } catch (error) { next(error) }
 })
 

@@ -8,6 +8,8 @@ export type SubmissionStatus = 'awaiting_review' | 'under_review' | 'adjudicatio
 export interface PortalAccount {
   id: string
   email: string
+  firstName: string
+  lastName: string
   passwordHash: string
   role: AccountRole
   createdAt: string
@@ -45,7 +47,7 @@ export interface AssignedReview extends HumanReview {
 export interface NotificationRecord {
   id: string
   recipientId: string
-  type: 'review_assigned' | 'results_ready' | 'reviewer_approved'
+  type: 'candidate_welcome' | 'assessment_submitted' | 'review_assigned' | 'reviewer_application_received' | 'reviewer_approved' | 'reviewer_rejected' | 'results_ready'
   subject: string
   createdAt: string
   sentAt?: string

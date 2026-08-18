@@ -1,15 +1,15 @@
 # Zobology
 
-Zobology — From Interview Room to Boardroom.
+Zobology — Assess. Improve. Get Hired.
 
-A full-stack job-readiness portal for candidates, industry reviewers, and administrators. The production architecture runs as a Node/Express web service on Render with Render PostgreSQL.
+A full-stack job-readiness portal for candidates, industry mentors, and administrators. The production architecture runs as a Node/Express web service on Render with Render PostgreSQL.
 
 ## Included
 
-- Candidate and reviewer email/password registration
+- Candidate and mentor name, email, and password registration
 - Bcrypt password hashing and opaque HTTP-only database sessions
 - Candidate profile, generated assessment, written/audio responses, and 24-hour review status
-- Reviewer expertise registration, admin approval, workload-aware role/industry matching, and rubric scoring
+- Mentor expertise registration, admin approval, workload-aware role/industry matching, and rubric scoring
 - Two independent reviews followed by admin adjudication and result publication
 - Private S3-compatible storage authorization for assessment audio and resumes
 - PostgreSQL migrations, immutable audit events, notification outbox, and Resend email job

@@ -58,6 +58,8 @@ export async function bootstrapDatabase(database: PortalDatabase) {
   const admin: PortalAccount = {
     id: 'USR-ADMIN-DEMO',
     email: 'admin@zobology.in',
+    firstName: 'Zobology',
+    lastName: 'Admin',
     passwordHash: await hashPassword('Admin@123'),
     role: 'admin',
     createdAt,
@@ -65,11 +67,13 @@ export async function bootstrapDatabase(database: PortalDatabase) {
   const expertAccounts: PortalAccount[] = [1, 2].map((number) => ({
     id: `USR-EXPERT-0${number}`,
     email: `expert${number}@zobology.in`,
+    firstName: 'Industry',
+    lastName: `Mentor ${number}`,
     passwordHash: '',
     role: 'reviewer' as const,
     createdAt,
   }))
-  const expertPasswordHash = await hashPassword('Reviewer@123')
+  const expertPasswordHash = await hashPassword('Mentor@123')
   expertAccounts.forEach((account) => { account.passwordHash = expertPasswordHash })
   const broadRoleIds = roles.slice(0, 5).map((role) => role.id)
   const broadIndustryIds = industries.slice(0, 5).map((industry) => industry.id)
@@ -101,7 +105,10 @@ export function assignSubmission(database: PortalDatabase, submission: PortalSub
     id: createId('REV'),
     submissionId: submission.id,
     reviewerId,
-    reviewerName: database.accounts.find((account) => account.id === reviewerId)?.email.split('@')[0] ?? 'Industry expert',
+    reviewerName: (() => {
+      const account = database.accounts.find((item) => item.id === reviewerId)
+      return account ? `${account.firstName || ''} ${account.lastName || ''}`.trim() || account.email.split('@')[0] : 'Industry mentor'
+    })(),
     status: 'pending',
     questionReviews: {},
   }))
