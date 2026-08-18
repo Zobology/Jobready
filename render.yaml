@@ -1,0 +1,66 @@
+services:
+  - type: web
+    name: zobology
+    runtime: node
+    plan: starter
+    region: singapore
+    buildCommand: npm ci && npm run build
+    preDeployCommand: npm run migrate
+    initialDeployHook: npm run create-admin
+    startCommand: npm start
+    healthCheckPath: /api/health
+    autoDeployTrigger: commit
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: APP_URL
+        value: https://www.zobology.in
+      - key: VITE_BACKEND_MODE
+        value: render
+      - key: DATABASE_URL
+        fromDatabase:
+          name: zobology-db
+          property: connectionString
+      - key: ADMIN_EMAIL
+        sync: false
+      - key: ADMIN_PASSWORD
+        sync: false
+      - key: OBJECT_STORAGE_ENDPOINT
+        sync: false
+      - key: OBJECT_STORAGE_REGION
+        value: auto
+      - key: OBJECT_STORAGE_BUCKET
+        sync: false
+      - key: OBJECT_STORAGE_ACCESS_KEY_ID
+        sync: false
+      - key: OBJECT_STORAGE_SECRET_ACCESS_KEY
+        sync: false
+
+  - type: cron
+    name: zobology-notifications
+    runtime: node
+    plan: starter
+    region: singapore
+    schedule: "*/5 * * * *"
+    buildCommand: npm ci && npm run build:server
+    startCommand: npm run notifications
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: APP_URL
+        value: https://www.zobology.in
+      - key: DATABASE_URL
+        fromDatabase:
+          name: zobology-db
+          property: connectionString
+      - key: RESEND_API_KEY
+        sync: false
+      - key: EMAIL_FROM
+        value: Zobology <noreply@zobology.in>
+
+databases:
+  - name: zobology-db
+    plan: basic-256mb
+    region: singapore
+    databaseName: zobology
+    user: zobology

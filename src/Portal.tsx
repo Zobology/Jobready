@@ -19,6 +19,7 @@ import {
   X,
 } from 'lucide-react'
 import { Assessment, ProfileBuilder, Results } from './App'
+import { api, backendEnabled } from './api'
 import { ReviewWorkspace } from './HumanReview'
 import { buildAssessment, industries, roles } from './data'
 import type { AssessmentAnswer, CandidateProfile, HumanReview } from './reviewTypes'
@@ -92,17 +93,33 @@ export default function Portal() {
   const [activeReviewId, setActiveReviewId] = useState<string | null>(null)
   const [reviewQuestionIndex, setReviewQuestionIndex] = useState(0)
   const [mobileMenu, setMobileMenu] = useState(false)
+  const [operationError, setOperationError] = useState('')
 
   useEffect(() => {
-    bootstrapDatabase(loadDatabase()).then((seeded) => {
-      setDatabase(seeded)
-      saveDatabase(seeded)
-      setReady(true)
-    })
+    if (backendEnabled) {
+      api.state()
+        .then((result) => {
+          if (result) {
+            setDatabase(result.state)
+            setSessionId(result.user.id)
+          } else {
+            setDatabase(emptyPortalDatabase())
+            setSessionId(null)
+          }
+        })
+        .catch((error: Error) => setOperationError(error.message))
+        .finally(() => setReady(true))
+    } else {
+      bootstrapDatabase(loadDatabase()).then((seeded) => {
+        setDatabase(seeded)
+        saveDatabase(seeded)
+        setReady(true)
+      })
+    }
   }, [])
 
   useEffect(() => {
-    if (ready) saveDatabase(database)
+    if (ready && !backendEnabled) saveDatabase(database)
   }, [database, ready])
 
   const account = database.accounts.find((item) => item.id === sessionId) ?? null
@@ -117,10 +134,11 @@ export default function Portal() {
 
   function updateDatabase(next: PortalDatabase) {
     setDatabase(next)
-    saveDatabase(next)
+    if (!backendEnabled) saveDatabase(next)
   }
 
-  function signOut() {
+  async function signOut() {
+    if (backendEnabled) await api.signout().catch(() => undefined)
     saveSession(null)
     setSessionId(null)
     setPublicView('landing')
@@ -128,21 +146,47 @@ export default function Portal() {
     setMobileMenu(false)
   }
 
-  function submitAssessment() {
+  async function submitAssessment() {
     if (!account) return
+    setOperationError('')
+    let submittedProfile = { ...profile, resumeFile: undefined }
+    const submittedAnswers = { ...answers }
+    try {
+      if (backendEnabled) {
+        let resumeKey: string | undefined
+        if (profile.resumeFile) {
+          const uploaded = await api.upload('resume', profile.resumeFile, profile.resumeFile.name)
+          resumeKey = uploaded.key
+        }
+        for (const [questionId, answer] of Object.entries(submittedAnswers)) {
+          if (answer.audioUrl?.startsWith('blob:')) {
+            const blob = await fetch(answer.audioUrl).then((response) => response.blob())
+            const uploaded = await api.upload('audio', blob, `${questionId}.webm`)
+            submittedAnswers[questionId] = { ...answer, audioUrl: uploaded.url }
+          }
+        }
+        submittedProfile = { ...submittedProfile, resumeName: profile.resumeName }
+        await api.saveProfile({ ...submittedProfile, resumeKey })
+        const result = await api.submitAssessment({ profile: submittedProfile, role, industry, questions: assessment, answers: submittedAnswers })
+        updateDatabase(result.state)
+      }
+    } catch (error) {
+      setOperationError((error as Error).message)
+      return
+    }
     const submission: PortalSubmission = {
       id: createId('ZOB'),
       candidateId: account.id,
       submittedAt: new Date().toISOString(),
-      profile: { ...profile },
+      profile: submittedProfile,
       role,
       industry,
       questions: assessment,
-      answers: { ...answers },
+      answers: submittedAnswers,
       status: 'awaiting_review',
       assignedReviewerIds: [],
     }
-    updateDatabase(assignSubmission(database, submission))
+    if (!backendEnabled) updateDatabase(assignSubmission(database, submission))
     setStartingNewAssessment(false)
     setCandidateView('waiting')
     window.scrollTo(0, 0)
@@ -154,17 +198,27 @@ export default function Portal() {
       ...database,
       reviews: database.reviews.map((item) => item.id === activeReview.id ? { ...item, ...review } : item),
     })
+    if (backendEnabled) api.saveReview(review).catch((error: Error) => setOperationError(error.message))
   }
 
-  function finalizeReview() {
+  async function finalizeReview() {
     if (!activeReview || !activeSubmission) return
     const completedReview = { ...activeReview, status: 'completed' as const, completedAt: new Date().toISOString() }
+    if (backendEnabled) {
+      try {
+        const result = await api.saveReview(completedReview)
+        updateDatabase(result.state)
+      } catch (error) {
+        setOperationError((error as Error).message)
+        return
+      }
+    }
     const reviews = database.reviews.map((item) => item.id === activeReview.id ? completedReview : item)
     const completeCount = reviews.filter((item) => item.submissionId === activeSubmission.id && item.status === 'completed').length
     const submissions = database.submissions.map((item) => item.id === activeSubmission.id
       ? { ...item, status: completeCount >= 2 ? 'adjudication' as const : 'under_review' as const }
       : item)
-    updateDatabase({ ...database, reviews, submissions })
+    if (!backendEnabled) updateDatabase({ ...database, reviews, submissions })
     setActiveReviewId(null)
     setReviewerView('queue')
     window.scrollTo(0, 0)
@@ -183,6 +237,10 @@ export default function Portal() {
         onAuthenticated={(nextDatabase, userId) => {
           updateDatabase(nextDatabase)
           saveSession(userId)
+          setSessionId(userId)
+        }}
+        onServerAuthenticated={(nextDatabase, userId) => {
+          updateDatabase(nextDatabase)
           setSessionId(userId)
         }}
       />
@@ -230,6 +288,7 @@ export default function Portal() {
         onSignOut={signOut}
       />
       <main>
+        {operationError && <div className="portal-error-banner" role="alert">{operationError}<button onClick={() => setOperationError('')}>Dismiss</button></div>}
         {account.role === 'candidate' && (
           <>
             {resolvedCandidateView === 'profile' && <ProfileBuilder profile={profile} setProfile={setProfile} onContinue={() => { setAnswers({}); setQuestionIndex(0); setCandidateView('assessment'); window.scrollTo(0, 0) }} />}
@@ -294,11 +353,27 @@ export default function Portal() {
             database={database}
             onView={setAdminView}
             onUpdate={updateDatabase}
+            onReviewerDecision={backendEnabled ? async (userId, status) => {
+              try {
+                const result = await api.decideReviewer(userId, status)
+                updateDatabase(result.state)
+              } catch (error) { setOperationError((error as Error).message) }
+            } : undefined}
+            onPublish={backendEnabled ? async (submissionId, choice) => {
+              try {
+                const result = await api.publish(submissionId, choice)
+                updateDatabase(result.state)
+              } catch (error) { setOperationError((error as Error).message) }
+            } : undefined}
           />
         )}
       </main>
     </div>
   )
+}
+
+function emptyPortalDatabase(): PortalDatabase {
+  return { accounts: [], reviewers: [], submissions: [], reviews: [], notifications: [] }
 }
 
 function Brand() {
@@ -351,12 +426,14 @@ function AuthScreen({
   onBack,
   onSwitch,
   onAuthenticated,
+  onServerAuthenticated,
 }: {
   mode: PublicView
   database: PortalDatabase
   onBack: () => void
   onSwitch: (view: PublicView) => void
   onAuthenticated: (database: PortalDatabase, userId: string) => void
+  onServerAuthenticated: (database: PortalDatabase, userId: string) => void
 }) {
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
@@ -385,6 +462,19 @@ function AuthScreen({
     }
     setBusy(true)
     const normalizedEmail = email.trim().toLowerCase()
+    if (backendEnabled) {
+      try {
+        const result = signInMode
+          ? await api.signin(normalizedEmail, password)
+          : await api.signup({ email: normalizedEmail, password, role: reviewerMode ? 'reviewer' : 'candidate', roleIds, industryIds })
+        onServerAuthenticated(result.state, result.user.id)
+      } catch (serverError) {
+        setError((serverError as Error).message)
+      } finally {
+        setBusy(false)
+      }
+      return
+    }
     const passwordHash = await hashPassword(password)
     if (signInMode) {
       const account = database.accounts.find((item) => item.email === normalizedEmail && item.passwordHash === passwordHash)
@@ -434,7 +524,7 @@ function AuthScreen({
           <button className="primary-button" disabled={busy}>{busy ? 'Please wait…' : signInMode ? 'Sign in' : reviewerMode ? 'Submit application' : 'Create account'} <ArrowRight size={16} /></button>
         </form>
         <p className="auth-switch">{signInMode ? <>New to Zobology? <button onClick={() => onSwitch('signup')}>Create an account</button></> : <>Already have an account? <button onClick={() => onSwitch('signin')}>Sign in</button></>}</p>
-        {signInMode && <div className="demo-access"><strong>Preview accounts</strong><span>Admin: admin@zobology.in / Admin@123</span><span>Reviewer: expert1@zobology.in / Reviewer@123</span></div>}
+        {signInMode && !backendEnabled && <div className="demo-access"><strong>Preview accounts</strong><span>Admin: admin@zobology.in / Admin@123</span><span>Reviewer: expert1@zobology.in / Reviewer@123</span></div>}
       </main>
     </div>
   )
@@ -477,12 +567,16 @@ function Stat({ icon, label, value }: { icon: React.ReactNode; label: string; va
   return <div className="workspace-stat"><span>{icon}</span><div><small>{label}</small><strong>{value}</strong></div></div>
 }
 
-function AdminPanel({ view, database, onView, onUpdate }: { view: AdminView; database: PortalDatabase; onView: (view: AdminView) => void; onUpdate: (database: PortalDatabase) => void }) {
+function AdminPanel({ view, database, onView, onUpdate, onReviewerDecision, onPublish }: { view: AdminView; database: PortalDatabase; onView: (view: AdminView) => void; onUpdate: (database: PortalDatabase) => void; onReviewerDecision?: (userId: string, status: 'approved' | 'rejected') => Promise<void>; onPublish?: (submissionId: string, choice: string) => Promise<void> }) {
   const pendingReviewers = database.reviewers.filter((item) => item.status === 'pending')
   const adjudications = database.submissions.filter((item) => item.status === 'adjudication')
   const published = database.submissions.filter((item) => item.status === 'published')
 
   function approveReviewer(userId: string, status: 'approved' | 'rejected') {
+    if (onReviewerDecision) {
+      void onReviewerDecision(userId, status)
+      return
+    }
     const reviewers = database.reviewers.map((item) => item.userId === userId ? { ...item, status, approvedAt: status === 'approved' ? new Date().toISOString() : undefined } : item)
     let next = { ...database, reviewers }
     if (status === 'approved') {
@@ -500,6 +594,10 @@ function AdminPanel({ view, database, onView, onUpdate }: { view: AdminView; dat
   }
 
   function publish(submission: PortalSubmission, choice: string) {
+    if (onPublish) {
+      void onPublish(submission.id, choice)
+      return
+    }
     const completed = database.reviews.filter((review) => review.submissionId === submission.id && review.status === 'completed')
     const selected = choice === 'average' ? averageReviews(submission, completed) : scoreReview(submission, completed.find((review) => review.id === choice) ?? completed[0])
     const candidateNotification = { id: createId('NTF'), recipientId: submission.candidateId, type: 'results_ready' as const, subject: 'Your Zobology results are ready', createdAt: new Date().toISOString() }

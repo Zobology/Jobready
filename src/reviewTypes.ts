@@ -7,6 +7,7 @@ export interface CandidateProfile {
   industryId: string
   level: string
   resumeName: string
+  resumeFile?: File
 }
 
 export interface AssessmentAnswer {

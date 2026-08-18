@@ -343,7 +343,10 @@ export function ProfileBuilder({
                 <div className="upload-control">
                   <Upload size={17} />
                   <span>{profile.resumeName || 'Upload PDF or DOCX'}</span>
-                  <input type="file" accept=".pdf,.doc,.docx" onChange={(event) => update('resumeName', event.target.files?.[0]?.name ?? '')} />
+                  <input type="file" accept=".pdf,.doc,.docx" onChange={(event) => {
+                    const file = event.target.files?.[0]
+                    setProfile({ ...profile, resumeName: file?.name ?? '', resumeFile: file })
+                  }} />
                 </div>
               </label>
             </>

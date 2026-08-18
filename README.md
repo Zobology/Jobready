@@ -2,47 +2,70 @@
 
 Zobology — From Interview Room to Boardroom.
 
-A role-based job-readiness portal for candidates, industry reviewers, and administrators.
+A full-stack job-readiness portal for candidates, industry reviewers, and administrators. The production architecture runs as a Node/Express web service on Render with Render PostgreSQL.
 
-## Product journeys
+## Included
 
-- Candidate email/password registration, career-profile intake, generated assessment, 24-hour review status, and published results
-- Subjective written answers, audio communication evidence, and role × industry job simulations
-- Reviewer registration with up to five roles and five industries, admin approval, and expertise-based assignment
-- Two independent rubric-level reviews per assessment
-- Admin comparison, adjudication, and final result publication
-- Transactional email outbox for assignments, reviewer approval, and result publication
-- Assessment generation from 8 core competencies, 90 roles, 60 industries, and a tagged 7,118-item question bank
+- Candidate and reviewer email/password registration
+- Bcrypt password hashing and opaque HTTP-only database sessions
+- Candidate profile, generated assessment, written/audio responses, and 24-hour review status
+- Reviewer expertise registration, admin approval, workload-aware role/industry matching, and rubric scoring
+- Two independent reviews followed by admin adjudication and result publication
+- Private S3-compatible storage authorization for assessment audio and resumes
+- PostgreSQL migrations, immutable audit events, notification outbox, and Resend email job
+- One Render Blueprint for the web service, database, and notification cron job
+- 8 core competencies, 90 roles, 60 industries, and a tagged 7,118-item question bank
 
-## Run the portal
+## Local frontend preview
+
+Without `VITE_BACKEND_MODE=render`, the portal uses its isolated browser-only demonstration adapter:
 
 ```bash
 npm install
 npm run dev
 ```
 
-Without production environment variables, the portal runs in a persistent local preview mode. Preview credentials are shown on the sign-in screen. Local mode is for product testing only; it stores state in the browser.
+## Full-stack development
 
-## Production backend
+Start PostgreSQL and configure `.env` from [`.env.example`](.env.example), then run:
 
-The production database contract is in [`supabase/migrations/202608160001_zobology_portal.sql`](supabase/migrations/202608160001_zobology_portal.sql). It provides:
+```bash
+npm run build
+npm run migrate
+npm run create-admin
+npm start
+```
 
-- Supabase Auth-linked candidate, reviewer, and admin profiles
-- row-level security by account role and assignment
-- reviewer expertise and approval controls
-- server-side best-match assignment of up to two independent reviewers
-- assessment, rubric review, adjudication, notification-outbox, and audit tables
-- automatic movement to adjudication after two completed reviews
+Build the frontend with `VITE_BACKEND_MODE=render` when testing the real API. The combined server listens on `PORT`, exposes `/api/health`, serves `/api/*`, and serves the compiled React application for all other routes.
 
-Transactional email delivery is implemented in [`supabase/functions/send-notifications/index.ts`](supabase/functions/send-notifications/index.ts) using Resend. Schedule the function with Supabase Cron and provide the secrets listed in [`.env.example`](.env.example).
+## Render deployment
 
-Before public launch, connect the portal data adapter to the deployed Supabase project, create the first admin profile through a controlled migration, configure private storage buckets for audio/resumes, and remove local preview credentials.
+The [`render.yaml`](render.yaml) Blueprint creates:
 
-## Checks
+- `zobology`: Node web service
+- `zobology-db`: managed PostgreSQL
+- `zobology-notifications`: five-minute transactional-email cron job
+
+In Render, create a Blueprint from this repository and supply the prompted secrets:
+
+- `ADMIN_EMAIL`, `ADMIN_PASSWORD`
+- `OBJECT_STORAGE_ENDPOINT`, `OBJECT_STORAGE_BUCKET`
+- `OBJECT_STORAGE_ACCESS_KEY_ID`, `OBJECT_STORAGE_SECRET_ACCESS_KEY`
+- `RESEND_API_KEY`
+
+The pre-deploy command applies tracked migrations from [`server/migrations`](server/migrations). The first-deploy hook creates the initial administrator. Do not manually edit production tables; add a new numbered migration instead.
+
+Render services use an ephemeral filesystem, so audio and resumes must use private S3-compatible object storage such as Cloudflare R2 or AWS S3. PostgreSQL stores only controlled object keys and metadata.
+
+## Commands
 
 ```bash
 npm run lint
 npm run build
+npm run migrate
+npm run create-admin
+npm run notifications
+npm start
 ```
 
-The assessment taxonomy and bank model are documented in [`docs/question-bank.md`](docs/question-bank.md).
+The question-bank model is documented in [`docs/question-bank.md`](docs/question-bank.md).
