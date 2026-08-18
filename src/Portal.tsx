@@ -387,9 +387,8 @@ function Landing({ onSignIn, onSignUp, onReviewer }: { onSignIn: () => void; onS
       <main className="landing-main">
         <section className="landing-hero">
           <div className="landing-copy">
-            <div className="eyebrow"><span /> Human-reviewed job readiness</div>
             <h1>Zobology</h1>
-            <h2>From Interview Room<br />to <em>Boardroom.</em></h2>
+            <h2>Assess. Improve.<br /><em>Get Hired.</em></h2>
             <p>Know exactly where you stand for the role you want. Take a job-specific assessment and receive evidence-based evaluation from industry experts.</p>
             <div className="landing-actions"><button className="primary-button compact" onClick={onSignUp}>Start your assessment <ArrowRight size={17} /></button><button className="secondary-button" onClick={onSignIn}>Sign in</button></div>
             <div className="trust-row"><span><ShieldCheck size={16} /> Human evaluated</span><span><Target size={16} /> Role specific</span><span><Clock3 size={16} /> Results in 24 hours</span></div>
