@@ -535,7 +535,9 @@ function AuthScreen({
       try {
         const result = signInMode
           ? await api.signin(normalizedEmail, password)
-          : registeredResult ?? await api.signup({ firstName: firstName.trim(), lastName: lastName.trim(), email: normalizedEmail, password, role: reviewerMode ? 'reviewer' : 'candidate', linkedinProfile: reviewerMode ? linkedinProfile.trim() : undefined, roleIds, industryIds })
+          : registeredResult ?? await api.signup(reviewerMode
+            ? { firstName: firstName.trim(), lastName: lastName.trim(), email: normalizedEmail, password, role: 'reviewer', linkedinProfile: linkedinProfile.trim(), roleIds, industryIds }
+            : { firstName: firstName.trim(), lastName: lastName.trim(), email: normalizedEmail, password, role: 'candidate' })
         if (!signInMode && !registeredResult) setRegisteredResult(result)
         if (!signInMode && reviewerMode && mentorResume) {
           await api.upload('resume', mentorResume, mentorResume.name)

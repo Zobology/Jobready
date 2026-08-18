@@ -51,14 +51,19 @@ const linkedinProfileSchema = z.string().trim().url().max(500).refine((value) =>
   const hostname = new URL(value).hostname.toLowerCase()
   return hostname === 'linkedin.com' || hostname.endsWith('.linkedin.com')
 }, 'Enter a valid LinkedIn profile URL')
-const signupSchema = credentialsSchema.extend({
+const signupBaseSchema = credentialsSchema.extend({
   firstName: z.string().trim().min(1).max(80),
   lastName: z.string().trim().min(1).max(80),
-  role: z.enum(['candidate', 'reviewer']),
-  linkedinProfile: linkedinProfileSchema.optional(),
-  roleIds: z.array(z.string()).min(1).max(5).optional(),
-  industryIds: z.array(z.string()).min(1).max(5).optional(),
 })
+const signupSchema = z.discriminatedUnion('role', [
+  signupBaseSchema.extend({ role: z.literal('candidate') }),
+  signupBaseSchema.extend({
+    role: z.literal('reviewer'),
+    linkedinProfile: linkedinProfileSchema,
+    roleIds: z.array(z.string()).min(1).max(5),
+    industryIds: z.array(z.string()).min(1).max(5),
+  }),
+])
 
 app.get('/api/health', async (_request, response, next) => {
   try {
@@ -70,9 +75,6 @@ app.get('/api/health', async (_request, response, next) => {
 app.post('/api/auth/signup', authLimit, async (request, response, next) => {
   try {
     const input = signupSchema.parse(request.body)
-    if (input.role === 'reviewer' && (!input.roleIds?.length || !input.industryIds?.length || !input.linkedinProfile)) {
-      return response.status(400).json({ error: 'Mentor expertise and LinkedIn profile are required' })
-    }
     const passwordHash = await bcrypt.hash(input.password, 12)
     const userId = await transaction(async (client) => {
       const inserted = await client.query<{ id: string }>(
