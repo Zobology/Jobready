@@ -66,6 +66,11 @@ app.post('/api/auth/signup', authLimit, async (request, response, next) => {
       )
       if (input.role === 'reviewer') {
         await client.query('insert into reviewer_profiles (user_id, role_ids, industry_ids) values ($1, $2, $3)', [inserted.rows[0].id, input.roleIds, input.industryIds])
+        await client.query(
+          `insert into notification_outbox (recipient_id, event_type, payload)
+           values ($1, 'reviewer_application_received', jsonb_build_object('subject', 'We received your reviewer application'))`,
+          [inserted.rows[0].id],
+        )
       }
       return inserted.rows[0].id
     })
@@ -175,6 +180,11 @@ app.post('/api/candidate/assessments', requireRole('candidate'), async (request,
       await assignBestReviewers(client, assessmentId, roleId, industryId)
       const storageKeys = [...JSON.stringify(input.answers).matchAll(/\/api\/files\/([^"\\]+)/g)].map((match) => decodeURIComponent(match[1]))
       if (storageKeys.length) await client.query('update stored_files set assessment_id = $1 where owner_id = $2 and object_key = any($3)', [assessmentId, request.user!.id, storageKeys])
+      await client.query(
+        `insert into notification_outbox (recipient_id, event_type, payload)
+         values ($1, 'assessment_submitted', jsonb_build_object('assessment_id', $2::uuid, 'subject', 'We received your Zobology assessment'))`,
+        [request.user!.id, assessmentId],
+      )
       await client.query(`insert into audit_log (actor_id, action, entity_type, entity_id) values ($1,'assessment_submitted','assessment',$2)`, [request.user!.id, assessmentId])
       return assessmentId
     })
@@ -246,6 +256,12 @@ app.patch('/api/admin/reviewers/:id', requireRole('admin'), async (request, resp
             [request.params.id, assessment.id, assignment.rows[0].id],
           )
         }
+      } else {
+        await client.query(
+          `insert into notification_outbox (recipient_id,event_type,payload)
+           values ($1,'reviewer_rejected',jsonb_build_object('subject','Update on your reviewer application'))`,
+          [request.params.id],
+        )
       }
       await client.query(`insert into audit_log(actor_id,action,entity_type,entity_id,metadata) values($1,'reviewer_decision','reviewer',$2,jsonb_build_object('status',$3::text))`, [request.user!.id, request.params.id, status])
     })

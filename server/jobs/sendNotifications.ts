@@ -7,8 +7,11 @@ const appUrl = process.env.APP_URL ?? 'https://www.zobology.in'
 if (!apiKey) throw new Error('RESEND_API_KEY is required')
 
 const templates: Record<string, { subject: string; message: string }> = {
+  assessment_submitted: { subject: 'We received your Zobology assessment', message: 'Your assessment has been submitted successfully. Our industry experts will complete the evaluation within 24 hours.' },
   review_assigned: { subject: 'New Zobology assessment assigned', message: 'A matched assessment is waiting in your reviewer queue. Please complete it within 24 hours.' },
+  reviewer_application_received: { subject: 'We received your Zobology reviewer application', message: 'Thank you for registering as an industry reviewer. Our team will review your profile and notify you when it is approved.' },
   reviewer_approved: { subject: 'Your Zobology reviewer profile is approved', message: 'Your reviewer account is approved. You can now receive matched assessments.' },
+  reviewer_rejected: { subject: 'Update on your Zobology reviewer application', message: 'Your reviewer application was not approved at this time. You can contact the Zobology team if you would like further information.' },
   results_ready: { subject: 'Your Zobology results are ready', message: 'Your expert-reviewed job readiness results are ready.' },
 }
 
