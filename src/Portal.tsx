@@ -449,6 +449,9 @@ function AuthScreen({
   const [password, setPassword] = useState('')
   const [firstName, setFirstName] = useState('')
   const [lastName, setLastName] = useState('')
+  const [linkedinProfile, setLinkedinProfile] = useState('')
+  const [mentorResume, setMentorResume] = useState<File | null>(null)
+  const [registeredResult, setRegisteredResult] = useState<Awaited<ReturnType<typeof api.signup>> | null>(null)
   const [roleIds, setRoleIds] = useState<string[]>([])
   const [industryIds, setIndustryIds] = useState<string[]>([])
   const [error, setError] = useState('')
@@ -476,16 +479,35 @@ function AuthScreen({
       setError('Select at least one role and one industry you can assess.')
       return
     }
+    if (reviewerMode) {
+      try {
+        const hostname = new URL(linkedinProfile.trim()).hostname.toLowerCase()
+        if (hostname !== 'linkedin.com' && !hostname.endsWith('.linkedin.com')) throw new Error()
+      } catch {
+        setError('Enter a valid LinkedIn profile URL, including https://.')
+        return
+      }
+      if (mentorResume && mentorResume.size > 25 * 1024 * 1024) {
+        setError('The résumé must be 25 MB or smaller.')
+        return
+      }
+    }
     setBusy(true)
     const normalizedEmail = email.trim().toLowerCase()
     if (backendEnabled) {
       try {
         const result = signInMode
           ? await api.signin(normalizedEmail, password)
-          : await api.signup({ firstName: firstName.trim(), lastName: lastName.trim(), email: normalizedEmail, password, role: reviewerMode ? 'reviewer' : 'candidate', roleIds, industryIds })
+          : registeredResult ?? await api.signup({ firstName: firstName.trim(), lastName: lastName.trim(), email: normalizedEmail, password, role: reviewerMode ? 'reviewer' : 'candidate', linkedinProfile: reviewerMode ? linkedinProfile.trim() : undefined, roleIds, industryIds })
+        if (!signInMode && !registeredResult) setRegisteredResult(result)
+        if (!signInMode && reviewerMode && mentorResume) {
+          await api.upload('resume', mentorResume, mentorResume.name)
+          const refreshed = await api.state()
+          if (refreshed) return onServerAuthenticated(refreshed.state, refreshed.user.id)
+        }
         onServerAuthenticated(result.state, result.user.id)
       } catch (serverError) {
-        setError((serverError as Error).message)
+        setError(registeredResult ? `Your account was created, but the résumé upload failed: ${(serverError as Error).message}. Submit again to retry.` : (serverError as Error).message)
       } finally {
         setBusy(false)
       }
@@ -517,6 +539,8 @@ function AuthScreen({
       userId: account.id,
       roleIds,
       industryIds,
+      linkedinProfile: linkedinProfile.trim(),
+      resumeKey: mentorResume?.name,
       status: 'pending',
       appliedAt: new Date().toISOString(),
     } : undefined
@@ -535,6 +559,8 @@ function AuthScreen({
           <label className="field"><span>{signInMode ? 'Password' : 'Set password'}</span><input type="password" value={password} onChange={(event) => setPassword(event.target.value)} placeholder="Minimum 8 characters" autoComplete={signInMode ? 'current-password' : 'new-password'} /></label>
           {reviewerMode && (
             <>
+              <label className="field"><span>LinkedIn profile <small>Required</small></span><input type="url" value={linkedinProfile} onChange={(event) => setLinkedinProfile(event.target.value)} placeholder="https://www.linkedin.com/in/your-profile" autoComplete="url" maxLength={500} /></label>
+              <label className="field file-field"><span>Résumé <small>Optional · PDF, DOC or DOCX · max 25 MB</small></span><input type="file" accept=".pdf,.doc,.docx,application/pdf,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document" onChange={(event) => setMentorResume(event.target.files?.[0] ?? null)} /></label>
               <MultiSelect label="Roles you can assess" hint={`${roleIds.length}/5 selected`} options={roles.map((item) => ({ id: item.id, label: item.name }))} selected={roleIds} onToggle={(id) => toggle(roleIds, id, setRoleIds)} />
               <MultiSelect label="Industries you know" hint={`${industryIds.length}/5 selected`} options={industries.map((item) => ({ id: item.id, label: item.name }))} selected={industryIds} onToggle={(id) => toggle(industryIds, id, setIndustryIds)} />
             </>
@@ -573,7 +599,7 @@ function CandidateWaiting({ submission }: { submission: PortalSubmission }) {
 }
 
 function ReviewerPending({ profile }: { profile: ReviewerProfile }) {
-  return <div className="status-page"><section className="status-card compact-status"><div className="status-icon pending"><Clock3 size={30} /></div><div className="eyebrow"><span /> Application received</div><h1>Mentor approval pending</h1><p className="status-lead">Our admin team will verify your application. Your matched assessment queue will become available once approved.</p><div className="submission-reference"><span><small>Roles selected</small><b>{profile.roleIds.length}</b></span><span><small>Industries selected</small><b>{profile.industryIds.length}</b></span><span><small>Status</small><b>{profile.status}</b></span></div></section></div>
+  return <div className="status-page"><section className="status-card compact-status"><div className="status-icon pending"><Clock3 size={30} /></div><div className="eyebrow"><span /> Application received</div><h1>Mentor approval pending</h1><p className="status-lead">Our admin team will verify your application. Your matched assessment queue will become available once approved.</p><div className="submission-reference"><span><small>Roles selected</small><b>{profile.roleIds.length}</b></span><span><small>Industries selected</small><b>{profile.industryIds.length}</b></span><span><small>Résumé</small><b>{profile.resumeKey ? 'Attached' : 'Not provided'}</b></span><span><small>Status</small><b>{profile.status}</b></span></div></section></div>
 }
 
 function ReviewerDashboard({ account, database, onOpen }: { account: PortalAccount; database: PortalDatabase; onOpen: (reviewId: string) => void }) {
@@ -642,7 +668,7 @@ function Metric({ label, value, icon, alert }: { label: string; value: number; i
 function ScaleIcon() { return <span className="scale-icon">⚖</span> }
 
 function ReviewerApprovals({ database, onDecision }: { database: PortalDatabase; onDecision: (userId: string, status: 'approved' | 'rejected') => void }) {
-  return <div className="approval-list">{database.reviewers.length === 0 ? <div className="empty-admin">No mentor applications.</div> : database.reviewers.map((profile) => { const account = database.accounts.find((item) => item.id === profile.userId); const name = account ? `${account.firstName || ''} ${account.lastName || ''}`.trim() : ''; return <article key={profile.userId}><div className="reviewer-identity"><i>{(name || account?.email || 'M')[0].toUpperCase()}</i><span><b>{name || account?.email}</b><small>{account?.email} · Applied {new Date(profile.appliedAt).toLocaleDateString()}</small></span><em className={`approval-status ${profile.status}`}>{profile.status}</em></div><div className="expertise-tags"><div><small>Roles</small><p>{profile.roleIds.map((id) => roles.find((item) => item.id === id)?.name).filter(Boolean).map((name) => <span key={name}>{name}</span>)}</p></div><div><small>Industries</small><p>{profile.industryIds.map((id) => industries.find((item) => item.id === id)?.name).filter(Boolean).map((name) => <span key={name}>{name}</span>)}</p></div></div>{profile.status === 'pending' && <div className="approval-actions"><button className="reject-button" onClick={() => onDecision(profile.userId, 'rejected')}>Reject</button><button className="approve-button" onClick={() => onDecision(profile.userId, 'approved')}><Check size={15} /> Approve mentor</button></div>}</article> })}</div>
+  return <div className="approval-list">{database.reviewers.length === 0 ? <div className="empty-admin">No mentor applications.</div> : database.reviewers.map((profile) => { const account = database.accounts.find((item) => item.id === profile.userId); const name = account ? `${account.firstName || ''} ${account.lastName || ''}`.trim() : ''; return <article key={profile.userId}><div className="reviewer-identity"><i>{(name || account?.email || 'M')[0].toUpperCase()}</i><span><b>{name || account?.email}</b><small>{account?.email} · Applied {new Date(profile.appliedAt).toLocaleDateString()}</small></span><em className={`approval-status ${profile.status}`}>{profile.status}</em></div><div className="mentor-credentials">{profile.linkedinProfile ? <a href={profile.linkedinProfile} target="_blank" rel="noreferrer">View LinkedIn profile ↗</a> : <span>LinkedIn not provided</span>}{profile.resumeKey ? backendEnabled ? <a href={`/api/files/${encodeURIComponent(profile.resumeKey)}`} target="_blank" rel="noreferrer">View résumé ↗</a> : <span>Résumé attached</span> : <span>No résumé provided</span>}</div><div className="expertise-tags"><div><small>Roles</small><p>{profile.roleIds.map((id) => roles.find((item) => item.id === id)?.name).filter(Boolean).map((name) => <span key={name}>{name}</span>)}</p></div><div><small>Industries</small><p>{profile.industryIds.map((id) => industries.find((item) => item.id === id)?.name).filter(Boolean).map((name) => <span key={name}>{name}</span>)}</p></div></div>{profile.status === 'pending' && <div className="approval-actions"><button className="reject-button" onClick={() => onDecision(profile.userId, 'rejected')}>Reject</button><button className="approve-button" onClick={() => onDecision(profile.userId, 'approved')}><Check size={15} /> Approve mentor</button></div>}</article> })}</div>
 }
 
 function AdjudicationQueue({ database, onPublish }: { database: PortalDatabase; onPublish: (submission: PortalSubmission, choice: string) => void }) {

@@ -47,10 +47,15 @@ const publicUser = (user: AuthenticatedUser) => ({
   lastName: user.last_name ?? '',
   role: user.role,
 })
+const linkedinProfileSchema = z.string().trim().url().max(500).refine((value) => {
+  const hostname = new URL(value).hostname.toLowerCase()
+  return hostname === 'linkedin.com' || hostname.endsWith('.linkedin.com')
+}, 'Enter a valid LinkedIn profile URL')
 const signupSchema = credentialsSchema.extend({
   firstName: z.string().trim().min(1).max(80),
   lastName: z.string().trim().min(1).max(80),
   role: z.enum(['candidate', 'reviewer']),
+  linkedinProfile: linkedinProfileSchema.optional(),
   roleIds: z.array(z.string()).min(1).max(5).optional(),
   industryIds: z.array(z.string()).min(1).max(5).optional(),
 })
@@ -65,8 +70,8 @@ app.get('/api/health', async (_request, response, next) => {
 app.post('/api/auth/signup', authLimit, async (request, response, next) => {
   try {
     const input = signupSchema.parse(request.body)
-    if (input.role === 'reviewer' && (!input.roleIds?.length || !input.industryIds?.length)) {
-      return response.status(400).json({ error: 'Mentor expertise is required' })
+    if (input.role === 'reviewer' && (!input.roleIds?.length || !input.industryIds?.length || !input.linkedinProfile)) {
+      return response.status(400).json({ error: 'Mentor expertise and LinkedIn profile are required' })
     }
     const passwordHash = await bcrypt.hash(input.password, 12)
     const userId = await transaction(async (client) => {
@@ -75,7 +80,10 @@ app.post('/api/auth/signup', authLimit, async (request, response, next) => {
         [input.email.toLowerCase(), passwordHash, input.firstName, input.lastName, input.role],
       )
       if (input.role === 'reviewer') {
-        await client.query('insert into reviewer_profiles (user_id, role_ids, industry_ids) values ($1, $2, $3)', [inserted.rows[0].id, input.roleIds, input.industryIds])
+        await client.query(
+          'insert into reviewer_profiles (user_id, role_ids, industry_ids, linkedin_url) values ($1, $2, $3, $4)',
+          [inserted.rows[0].id, input.roleIds, input.industryIds, input.linkedinProfile],
+        )
         await client.query(
           `insert into notification_outbox (recipient_id, event_type, payload)
            values ($1, 'reviewer_application_received', jsonb_build_object('subject', 'We received your mentor application'))`,
@@ -144,15 +152,17 @@ app.put('/api/candidate/profile', requireRole('candidate'), async (request, resp
   } catch (error) { next(error) }
 })
 
-app.post('/api/uploads/:kind', requireRole('candidate'), upload.single('file'), async (request, response, next) => {
+app.post('/api/uploads/:kind', requireRole('candidate', 'reviewer'), upload.single('file'), async (request, response, next) => {
   try {
     const kind = z.enum(['audio', 'resume']).parse(request.params.kind)
+    if (request.user!.role === 'reviewer' && kind !== 'resume') return response.status(403).json({ error: 'Mentors can only upload a resume' })
     if (!request.file) return response.status(400).json({ error: 'File is required' })
     const key = await uploadFile(request.user!.id, kind, request.file)
     await pool.query(
       'insert into stored_files (owner_id, object_key, kind, content_type, original_name, size_bytes) values ($1,$2,$3,$4,$5,$6)',
       [request.user!.id, key, kind, request.file.mimetype, request.file.originalname, request.file.size],
     )
+    if (request.user!.role === 'reviewer') await pool.query('update reviewer_profiles set resume_key=$1 where user_id=$2', [key, request.user!.id])
     response.status(201).json({ key, url: `/api/files/${encodeURIComponent(key)}` })
   } catch (error) { next(error) }
 })

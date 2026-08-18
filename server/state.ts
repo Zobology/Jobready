@@ -12,6 +12,8 @@ function reviewer(row: Record<string, unknown>) {
     roleIds: row.role_ids,
     industryIds: row.industry_ids,
     status: row.status,
+    linkedinProfile: row.linkedin_url ?? '',
+    resumeKey: row.resume_key ?? undefined,
     appliedAt: row.applied_at,
     approvedAt: row.approved_at ?? undefined,
   }

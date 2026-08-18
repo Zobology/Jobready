@@ -25,7 +25,7 @@ export const api = {
     if (!response.ok) throw new Error(payload.error || 'Unable to load your account')
     return payload
   },
-  signup(input: { firstName: string; lastName: string; email: string; password: string; role: 'candidate' | 'reviewer'; roleIds?: string[]; industryIds?: string[] }) {
+  signup(input: { firstName: string; lastName: string; email: string; password: string; role: 'candidate' | 'reviewer'; linkedinProfile?: string; roleIds?: string[]; industryIds?: string[] }) {
     return request<StateResponse>('/auth/signup', { method: 'POST', body: JSON.stringify(input) })
   },
   signin(email: string, password: string) {

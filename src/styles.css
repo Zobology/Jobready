@@ -196,6 +196,9 @@ button { color: inherit; }
 .reviewer-identity b, .reviewer-identity small { display: block; }
 .reviewer-identity b { font-size: 12px; }
 .reviewer-identity small { margin-top: 3px; color: var(--muted); font-size: 9px; }
+.mentor-credentials { display: flex; flex-wrap: wrap; gap: 8px; margin: 14px 0; }
+.mentor-credentials a, .mentor-credentials span { padding: 7px 10px; color: var(--green); background: var(--mint); border-radius: 7px; font-size: 9px; font-weight: 800; text-decoration: none; }
+.mentor-credentials span { color: var(--muted); background: #f0f4f2; }
 .approval-status { padding: 6px 9px; border-radius: 99px; font-style: normal; font-size: 8px; font-weight: 800; text-transform: uppercase; }
 .approval-status.pending { color: #9b632e; background: #fff1e4; }
 .approval-status.approved { color: var(--green); background: var(--mint); }

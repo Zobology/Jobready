@@ -19,6 +19,8 @@ export interface ReviewerProfile {
   userId: string
   roleIds: string[]
   industryIds: string[]
+  linkedinProfile: string
+  resumeKey?: string
   status: ReviewerStatus
   appliedAt: string
   approvedAt?: string

@@ -81,6 +81,7 @@ export async function bootstrapDatabase(database: PortalDatabase) {
     userId: account.id,
     roleIds: broadRoleIds,
     industryIds: broadIndustryIds,
+    linkedinProfile: `https://www.linkedin.com/in/zobology-mentor-${account.id.slice(-2).toLowerCase()}`,
     status: 'approved',
     appliedAt: createdAt,
     approvedAt: createdAt,
