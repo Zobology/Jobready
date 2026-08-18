@@ -4,7 +4,7 @@ services:
     runtime: node
     plan: starter
     region: singapore
-    buildCommand: npm ci && npm run build
+    buildCommand: npm ci --include=dev && npm run build
     preDeployCommand: npm run migrate
     initialDeployHook: npm run create-admin
     startCommand: npm start
@@ -42,7 +42,7 @@ services:
     plan: starter
     region: singapore
     schedule: "*/5 * * * *"
-    buildCommand: npm ci && npm run build:server
+    buildCommand: npm ci --include=dev && npm run build:server
     startCommand: npm run notifications
     envVars:
       - key: NODE_ENV
