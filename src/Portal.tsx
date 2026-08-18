@@ -84,18 +84,19 @@ function accountName(database: PortalDatabase, userId: string) {
 }
 
 export default function Portal() {
+  const [requestedReviewId] = useState(() => new URLSearchParams(window.location.search).get('review'))
   const [database, setDatabase] = useState<PortalDatabase>(() => loadDatabase())
   const [ready, setReady] = useState(false)
   const [sessionId, setSessionId] = useState<string | null>(() => loadSession())
-  const [publicView, setPublicView] = useState<PublicView>('landing')
+  const [publicView, setPublicView] = useState<PublicView>(requestedReviewId ? 'signin' : 'landing')
   const [candidateView, setCandidateView] = useState<CandidateView>('profile')
-  const [reviewerView, setReviewerView] = useState<ReviewerView>('queue')
+  const [reviewerView, setReviewerView] = useState<ReviewerView>(requestedReviewId ? 'review' : 'queue')
   const [adminView, setAdminView] = useState<AdminView>('dashboard')
   const [profile, setProfile] = useState<CandidateProfile>(initialProfile)
   const [answers, setAnswers] = useState<Record<string, AssessmentAnswer>>({})
   const [questionIndex, setQuestionIndex] = useState(0)
   const [startingNewAssessment, setStartingNewAssessment] = useState(false)
-  const [activeReviewId, setActiveReviewId] = useState<string | null>(null)
+  const [activeReviewId, setActiveReviewId] = useState<string | null>(requestedReviewId)
   const [reviewQuestionIndex, setReviewQuestionIndex] = useState(0)
   const [mobileMenu, setMobileMenu] = useState(false)
   const [operationError, setOperationError] = useState('')
