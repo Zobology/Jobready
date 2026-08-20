@@ -38,6 +38,11 @@ export const api = {
     form.append('file', blob, filename)
     return request<{ key: string; url: string }>(`/uploads/${kind}`, { method: 'POST', body: form })
   },
+  async analyzeResume(file: File) {
+    const form = new FormData()
+    form.append('file', file, file.name)
+    return request<{ key: string; signals: string[] }>('/candidate/resume-analysis', { method: 'POST', body: form })
+  },
   submitAssessment(submission: Pick<PortalSubmission, 'profile' | 'role' | 'industry' | 'questions' | 'answers'>) {
     return request<{ id: string; state: PortalDatabase; user: StateResponse['user'] }>('/candidate/assessments', { method: 'POST', body: JSON.stringify(submission) })
   },

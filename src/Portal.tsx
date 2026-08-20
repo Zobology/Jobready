@@ -100,6 +100,7 @@ export default function Portal() {
   const [reviewQuestionIndex, setReviewQuestionIndex] = useState(0)
   const [mobileMenu, setMobileMenu] = useState(false)
   const [operationError, setOperationError] = useState('')
+  const [preparingAssessment, setPreparingAssessment] = useState(false)
   const reviewSaveTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
   const pendingReviewSave = useRef<HumanReview | null>(null)
   const reviewSaveQueue = useRef<Promise<void>>(Promise.resolve())
@@ -141,7 +142,17 @@ export default function Portal() {
   const activeSubmission = activeReview ? database.submissions.find((item) => item.id === activeReview.submissionId) : undefined
   const role = roles.find((item) => item.id === profile.roleId) ?? roles[0]
   const industry = industries.find((item) => item.id === profile.industryId) ?? industries[0]
-  const assessment = useMemo(() => buildAssessment(role, industry), [role, industry])
+  const assessment = useMemo(
+    () => buildAssessment(role, industry, {
+      education: profile.education,
+      experienceType: profile.experienceType,
+      experienceYears: profile.experienceYears,
+      level: profile.level,
+      resumeName: profile.resumeName,
+      resumeSignals: profile.resumeSignals,
+    }),
+    [role, industry, profile.education, profile.experienceType, profile.experienceYears, profile.level, profile.resumeName, profile.resumeSignals],
+  )
 
   function updateDatabase(next: PortalDatabase) {
     setDatabase(next)
@@ -164,8 +175,8 @@ export default function Portal() {
     const submittedAnswers = { ...answers }
     try {
       if (backendEnabled) {
-        let resumeKey: string | undefined
-        if (profile.resumeFile) {
+        let resumeKey = profile.resumeKey
+        if (profile.resumeFile && !resumeKey) {
           const uploaded = await api.upload('resume', profile.resumeFile, profile.resumeFile.name)
           resumeKey = uploaded.key
         }
@@ -176,7 +187,7 @@ export default function Portal() {
             submittedAnswers[questionId] = { ...answer, audioUrl: uploaded.url }
           }
         }
-        submittedProfile = { ...submittedProfile, resumeName: profile.resumeName }
+        submittedProfile = { ...submittedProfile, resumeName: profile.resumeName, resumeKey }
         await api.saveProfile({ ...submittedProfile, resumeKey })
         const result = await api.submitAssessment({ profile: submittedProfile, role, industry, questions: assessment, answers: submittedAnswers })
         updateDatabase(result.state)
@@ -201,6 +212,33 @@ export default function Portal() {
     setStartingNewAssessment(false)
     setCandidateView('waiting')
     window.scrollTo(0, 0)
+  }
+
+  async function beginCandidateAssessment() {
+    setOperationError('')
+    setPreparingAssessment(true)
+    try {
+      let nextProfile = profile
+      if (backendEnabled && profile.resumeFile) {
+        const analyzed = await api.analyzeResume(profile.resumeFile)
+        nextProfile = {
+          ...profile,
+          resumeFile: undefined,
+          resumeKey: analyzed.key,
+          resumeSignals: analyzed.signals,
+        }
+        setProfile(nextProfile)
+      }
+      if (backendEnabled) await api.saveProfile({ ...nextProfile, resumeFile: undefined })
+      setAnswers({})
+      setQuestionIndex(0)
+      setCandidateView('assessment')
+      window.scrollTo(0, 0)
+    } catch (error) {
+      setOperationError((error as Error).message)
+    } finally {
+      setPreparingAssessment(false)
+    }
   }
 
   function enqueueReviewSave(review: HumanReview) {
@@ -385,7 +423,7 @@ export default function Portal() {
         {operationError && <div className="portal-error-banner" role="alert">{operationError}<button onClick={() => setOperationError('')}>Dismiss</button></div>}
         {account.role === 'candidate' && (
           <>
-            {resolvedCandidateView === 'profile' && <ProfileBuilder profile={profile} setProfile={setProfile} onContinue={() => { setAnswers({}); setQuestionIndex(0); setCandidateView('assessment'); window.scrollTo(0, 0) }} />}
+            {resolvedCandidateView === 'profile' && <ProfileBuilder profile={profile} setProfile={setProfile} onContinue={beginCandidateAssessment} isPreparing={preparingAssessment} />}
             {resolvedCandidateView === 'assessment' && (
               <Assessment
                 questions={assessment}

@@ -1,5 +1,6 @@
 import { masterCoreCompetencies, masterIndustries, masterRoles } from './masterMatrix'
 import { getAssessmentBank, type AssessmentMode, type DiagnosticTag, type ProficiencyLevel, type QuestionBankItem } from './questionBank'
+import type { CandidateProfile } from './reviewTypes'
 
 export type Dimension = 'core' | 'role' | 'industry' | 'simulation'
 
@@ -89,7 +90,115 @@ export const industries: Industry[] = masterIndustries.map((industry) => ({
   focus: industry.focus,
 }))
 
-const selectedCoreIndexes = [0, 2, 3, 5, 6, 7, 9, 11, 13, 15]
+type AssessmentProfile = Pick<CandidateProfile, 'education' | 'experienceType' | 'experienceYears' | 'level' | 'resumeName' | 'resumeSignals'>
+type TargetBand = 'entry' | 'associate' | 'mid' | 'senior'
+
+function targetBand(level: string): TargetBand {
+  if (/senior/i.test(level)) return 'senior'
+  if (/mid/i.test(level)) return 'mid'
+  if (/associate/i.test(level)) return 'associate'
+  return 'entry'
+}
+
+function experienceBand(profile: AssessmentProfile) {
+  if (profile.experienceType === 'fresher') return 'fresher'
+  const years = Number.parseFloat(profile.experienceYears)
+  if (!Number.isFinite(years) || years < 4) return 'early-career'
+  if (years < 8) return 'experienced'
+  return 'highly-experienced'
+}
+
+function applicationTarget(dimension: 'core' | 'role' | 'industry', total: number, profile: AssessmentProfile) {
+  const levelTargets: Record<TargetBand, Record<typeof dimension, number>> = {
+    entry: { core: 5, role: 4, industry: 2 },
+    associate: { core: 7, role: 6, industry: 4 },
+    mid: { core: 9, role: 7, industry: 5 },
+    senior: { core: 10, role: 8, industry: 5 },
+  }
+  const educationAdjustment = /Master|MBA/i.test(profile.education) ? 1 : 0
+  const experienceAdjustment = profile.experienceType === 'experienced' ? 1 : 0
+  return Math.min(total, levelTargets[targetBand(profile.level)][dimension] + educationAdjustment + experienceAdjustment)
+}
+
+function isApplicationItem(item: QuestionBankItem) {
+  return item.proficiency !== 'foundation' && item.assessmentModes.includes('application')
+}
+
+function normalizedWords(value: string) {
+  return value.toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim()
+}
+
+function resumeMatch(item: QuestionBankItem, profile: AssessmentProfile) {
+  const itemEvidence = normalizedWords([item.competency, ...item.tags].join(' '))
+  return profile.resumeSignals?.find((signal) => {
+    const normalizedSignal = normalizedWords(signal)
+    return normalizedSignal && (itemEvidence.includes(normalizedSignal) || normalizedSignal.includes(normalizedWords(item.competency)))
+  })
+}
+
+function selectMixed(items: QuestionBankItem[], total: number, applicationCount: number, profile: AssessmentProfile) {
+  const groups = [...items.reduce((map, item) => {
+    const group = map.get(item.competency) ?? []
+    group.push(item)
+    map.set(item.competency, group)
+    return map
+  }, new Map<string, QuestionBankItem[]>()).values()].sort((a, b) => Number(Boolean(resumeMatch(b[0], profile))) - Number(Boolean(resumeMatch(a[0], profile))))
+  const selected: QuestionBankItem[] = []
+  groups.forEach((group, index) => {
+    const preferApplication = index < applicationCount
+    const preferred = group.find((item) => isApplicationItem(item) === preferApplication)
+    const item = preferred ?? group[0]
+    if (item && selected.length < total) selected.push(item)
+  })
+  const applicationSelected = selected.filter(isApplicationItem).length
+  const remaining = items
+    .filter((item) => !selected.some((selectedItem) => selectedItem.id === item.id))
+    .sort((a, b) => {
+      const aNeeded = applicationSelected < applicationCount && isApplicationItem(a) ? 1 : 0
+      const bNeeded = applicationSelected < applicationCount && isApplicationItem(b) ? 1 : 0
+      return bNeeded - aNeeded
+    })
+  return [...selected, ...remaining].slice(0, total)
+}
+
+const levelComplexity: Record<TargetBand, string> = {
+  entry: 'Work within a familiar situation, make reasonable assumptions, and explain the immediate next steps.',
+  associate: 'Assume you own the task independently and must align at least one stakeholder before acting.',
+  mid: 'Address incomplete evidence, competing cross-functional priorities, implementation risk, and measurable trade-offs.',
+  senior: 'Frame the decision for senior leadership, including strategic trade-offs, governance, second-order consequences, and organizational impact.',
+}
+
+function educationExpectation(education: string) {
+  if (/Master|MBA/i.test(education)) return 'Integrate commercial impact and stakeholder implications where relevant.'
+  if (/Diploma|professional/i.test(education)) return 'Emphasize practical tools, process steps, and observable outcomes.'
+  if (/Bachelor/i.test(education)) return 'Translate relevant concepts into a practical workplace response.'
+  return 'Make assumptions explicit and explain your reasoning in practical workplace terms.'
+}
+
+function experienceExpectation(profile: AssessmentProfile) {
+  if (profile.experienceType === 'fresher') return 'Where relevant, you may draw evidence from internships, academic projects, volunteering, or other structured responsibilities.'
+  const years = profile.experienceYears.trim()
+  return `Where relevant, connect your answer to an anonymized example from ${years ? `${years} years of` : 'your'} professional experience and distinguish your own contribution.`
+}
+
+function adaptItem(item: QuestionBankItem, profile: AssessmentProfile): QuestionBankItem {
+  const band = targetBand(profile.level)
+  const matchedResumeSignal = resumeMatch(item, profile)
+  const evidenceCriterion = profile.experienceType === 'fresher' ? 'Transferability of evidence' : 'Professional evidence and ownership'
+  const levelCriteria = band === 'senior'
+    ? ['Strategic judgement', 'Governance and second-order impact']
+    : band === 'mid'
+      ? ['Stakeholder trade-offs', 'Ambiguity and risk management']
+      : band === 'associate' ? ['Independent application'] : []
+  return {
+    ...item,
+    proficiency: band === 'mid' || band === 'senior' ? 'advanced' : band === 'associate' ? 'job_ready' : item.proficiency,
+    prompt: `${item.prompt} ${levelComplexity[band]}${matchedResumeSignal ? ` Your resume references ${matchedResumeSignal}; use this response to demonstrate the depth of that capability.` : ''}`,
+    guidance: `${item.guidance} ${educationExpectation(profile.education)} ${experienceExpectation(profile)}${profile.resumeName ? ' Keep examples consistent with the responsibilities and outcomes represented in your resume.' : ''}`,
+    rubric: [...new Set([...item.rubric, ...levelCriteria, evidenceCriterion, ...(matchedResumeSignal ? ['Resume-claim validation'] : [])])],
+    tags: [...new Set([...item.tags, `target-${band}`, `education-${profile.education.toLowerCase().replace(/[^a-z0-9]+/g, '-')}`, `experience-${experienceBand(profile)}`, ...(matchedResumeSignal ? [`resume-evidence-${normalizedWords(matchedResumeSignal).replace(/ /g, '-')}`] : [])])],
+  }
+}
 
 function toQuestion(item: QuestionBankItem, occurrence: number): Question {
   const dimension: Dimension = item.dimension === 'role_industry' ? 'simulation' : item.dimension
@@ -117,13 +226,13 @@ function toQuestion(item: QuestionBankItem, occurrence: number): Question {
   }
 }
 
-export function buildAssessment(role: RoleFamily, industry: Industry): Question[] {
+export function buildAssessment(role: RoleFamily, industry: Industry, profile: AssessmentProfile): Question[] {
   const bank = getAssessmentBank(role.code, industry.code)
-  const core = selectedCoreIndexes.map((index) => bank.core[index]).filter(Boolean)
-  const roleItems = bank.role.filter((item) => item.assessmentModes.includes('application')).slice(0, 8)
-  const industryItems = bank.industry.filter((item) => item.assessmentModes.includes('application')).slice(0, 5)
+  const core = selectMixed(bank.core, 10, applicationTarget('core', 10, profile), profile)
+  const roleItems = selectMixed(bank.role, 8, applicationTarget('role', 8, profile), profile)
+  const industryItems = selectMixed(bank.industry, 5, applicationTarget('industry', 5, profile), profile)
   const items = [...core, ...roleItems, ...industryItems, ...(bank.simulation ? [bank.simulation] : [])]
-  return items.map(toQuestion)
+  return items.map((item) => adaptItem(item, profile)).map(toQuestion)
 }
 
 export const educationOptions = [

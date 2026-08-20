@@ -82,7 +82,17 @@ function App() {
 
   const role = roles.find((item) => item.id === profile.roleId) ?? roles[3]
   const industry = industries.find((item) => item.id === profile.industryId) ?? industries[1]
-  const questions = useMemo(() => buildAssessment(role, industry), [role, industry])
+  const questions = useMemo(
+    () => buildAssessment(role, industry, {
+      education: profile.education,
+      experienceType: profile.experienceType,
+      experienceYears: profile.experienceYears,
+      level: profile.level,
+      resumeName: profile.resumeName,
+      resumeSignals: profile.resumeSignals,
+    }),
+    [role, industry, profile.education, profile.experienceType, profile.experienceYears, profile.level, profile.resumeName, profile.resumeSignals],
+  )
   const reviewedAnswers = useMemo(() => {
     if (!submission) return {}
     return Object.fromEntries(submission.questions.map((question) => {
@@ -263,10 +273,12 @@ export function ProfileBuilder({
   profile,
   setProfile,
   onContinue,
+  isPreparing = false,
 }: {
   profile: CandidateProfile
   setProfile: (profile: CandidateProfile) => void
-  onContinue: () => void
+  onContinue: () => void | Promise<void>
+  isPreparing?: boolean
 }) {
   const role = roles.find((item) => item.id === profile.roleId)
   const industry = industries.find((item) => item.id === profile.industryId)
@@ -343,9 +355,9 @@ export function ProfileBuilder({
                 <div className="upload-control">
                   <Upload size={17} />
                   <span>{profile.resumeName || 'Upload PDF or DOCX'}</span>
-                  <input type="file" accept=".pdf,.doc,.docx" onChange={(event) => {
+                  <input type="file" accept=".pdf,.docx" onChange={(event) => {
                     const file = event.target.files?.[0]
-                    setProfile({ ...profile, resumeName: file?.name ?? '', resumeFile: file })
+                    setProfile({ ...profile, resumeName: file?.name ?? '', resumeFile: file, resumeKey: undefined, resumeSignals: undefined })
                   }} />
                 </div>
               </label>
@@ -397,8 +409,8 @@ export function ProfileBuilder({
           </div>
         )}
 
-        <button className="primary-button" disabled={!isValid} onClick={onContinue}>
-          Build my assessment <ArrowRight size={18} />
+        <button className="primary-button" disabled={!isValid || isPreparing} onClick={() => void onContinue()}>
+          {isPreparing ? 'Analyzing your profile…' : 'Build my assessment'} {!isPreparing && <ArrowRight size={18} />}
         </button>
         <p className="privacy-copy">Your information is private and used only to personalize your assessment.</p>
       </section>

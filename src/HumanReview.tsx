@@ -185,7 +185,7 @@ export function ReviewWorkspace({
     <div className="review-workspace">
       <aside className="review-sidebar">
         <button className="back-to-queue" onClick={onExit}><ArrowLeft size={15} /> Review queue</button>
-        <div className="review-candidate"><i>{profile.name.slice(0, 1).toUpperCase()}</i><span><strong>{profile.name}</strong><small>{role.name}<br />{industry.name} · {profile.level}</small></span></div>
+        <div className="review-candidate"><i>{profile.name.slice(0, 1).toUpperCase()}</i><span><strong>{profile.name}</strong><small>{role.name}<br />{industry.name} · {profile.level}</small>{profile.resumeKey && <a href={`/api/files/${encodeURIComponent(profile.resumeKey)}`} target="_blank" rel="noreferrer">View candidate résumé ↗</a>}</span></div>
         <div className="review-progress-summary"><span><strong>{reviewedCount}</strong> of {questions.length} reviewed</span><div><i style={{ width: `${(reviewedCount / questions.length) * 100}%` }} /></div></div>
         <div className="review-question-list">
           {questions.map((item, index) => {

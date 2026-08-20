@@ -12,6 +12,7 @@ import type { AuthenticatedUser } from './auth.js'
 import { pool, transaction } from './db.js'
 import { assignBestReviewers, loadPortalState } from './state.js'
 import { readFile, storageConfigured, uploadFile } from './storage.js'
+import { extractResumeSignals } from './resume.js'
 
 const app = express()
 const port = Number(process.env.PORT ?? 10000)
@@ -136,6 +137,7 @@ const profileSchema = z.object({
   experienceType: z.enum(['fresher', 'experienced']), experienceYears: z.string().max(10),
   roleId: z.string().min(1), industryId: z.string().min(1), level: z.string().min(1).max(80),
   resumeName: z.string().max(255), resumeKey: z.string().max(1000).optional(),
+  resumeSignals: z.array(z.string().max(100)).max(20).optional(),
 })
 
 app.put('/api/candidate/profile', requireRole('candidate'), async (request, response, next) => {
@@ -166,6 +168,19 @@ app.post('/api/uploads/:kind', requireRole('candidate', 'reviewer'), upload.sing
     )
     if (request.user!.role === 'reviewer') await pool.query('update reviewer_profiles set resume_key=$1 where user_id=$2', [key, request.user!.id])
     response.status(201).json({ key, url: `/api/files/${encodeURIComponent(key)}` })
+  } catch (error) { next(error) }
+})
+
+app.post('/api/candidate/resume-analysis', requireRole('candidate'), upload.single('file'), async (request, response, next) => {
+  try {
+    if (!request.file) return response.status(400).json({ error: 'Resume is required' })
+    const analysis = await extractResumeSignals(request.file)
+    const key = await uploadFile(request.user!.id, 'resume', request.file)
+    await pool.query(
+      'insert into stored_files (owner_id, object_key, kind, content_type, original_name, size_bytes) values ($1,$2,$3,$4,$5,$6)',
+      [request.user!.id, key, 'resume', request.file.mimetype, request.file.originalname, request.file.size],
+    )
+    response.status(201).json({ key, signals: analysis.signals })
   } catch (error) { next(error) }
 })
 
@@ -209,6 +224,7 @@ app.post('/api/candidate/assessments', requireRole('candidate'), async (request,
       const industryId = String(input.industry.id ?? '')
       await assignBestReviewers(client, assessmentId, roleId, industryId)
       const storageKeys = [...JSON.stringify(input.answers).matchAll(/\/api\/files\/([^"\\]+)/g)].map((match) => decodeURIComponent(match[1]))
+      if (input.profile.resumeKey) storageKeys.push(input.profile.resumeKey)
       if (storageKeys.length) await client.query('update stored_files set assessment_id = $1 where owner_id = $2 and object_key = any($3)', [assessmentId, request.user!.id, storageKeys])
       await client.query(
         `insert into notification_outbox (recipient_id, event_type, payload)

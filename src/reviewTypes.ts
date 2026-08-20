@@ -7,6 +7,8 @@ export interface CandidateProfile {
   industryId: string
   level: string
   resumeName: string
+  resumeKey?: string
+  resumeSignals?: string[]
   resumeFile?: File
 }
 
