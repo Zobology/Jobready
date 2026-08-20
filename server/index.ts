@@ -290,10 +290,10 @@ app.put('/api/reviewer/reviews/:id', requireRole('reviewer'), async (request, re
   try {
     const input = reviewSchema.parse(request.body)
     await transaction(async (client) => {
-      const updated = await client.query<{ assessment_id: string }>(
+      const updated = await client.query<{ assessment_id: string; rubric_scores: Record<string, { criteria?: Record<string, { score?: number }>; comment?: string }> }>(
         `update review_assignments set rubric_scores=$1, status=$2,
           started_at=coalesce(started_at, now()), completed_at=case when $2='completed' then now() else completed_at end
-         where id=$3 and reviewer_id=$4 and status in ('accepted', 'in_review') returning assessment_id`,
+         where id=$3 and reviewer_id=$4 and status in ('accepted', 'in_review') returning assessment_id, rubric_scores`,
         [JSON.stringify(input.questionReviews), input.status, request.params.id, request.user!.id],
       )
       if (!updated.rows[0]) {
@@ -306,8 +306,46 @@ app.put('/api/reviewer/reviews/:id', requireRole('reviewer'), async (request, re
         throw Object.assign(new Error('Review not found'), { status: 404 })
       }
       if (input.status === 'completed') {
-        const count = await client.query<{ count: string }>('select count(*) from review_assignments where assessment_id=$1 and status=\'completed\'', [updated.rows[0].assessment_id])
-        if (Number(count.rows[0].count) >= 2) await client.query('update assessments set status=\'adjudication\' where id=$1', [updated.rows[0].assessment_id])
+        const counts = await client.query<{ active: string; completed: string }>(
+          `select
+             count(*) filter (where status in ('accepted','in_review','completed')) active,
+             count(*) filter (where status='completed') completed
+           from review_assignments where assessment_id=$1`,
+          [updated.rows[0].assessment_id],
+        )
+        const activeCount = Number(counts.rows[0].active)
+        const completedCount = Number(counts.rows[0].completed)
+        if (completedCount >= 2) {
+          await client.query(`update assessments set status='adjudication' where id=$1`, [updated.rows[0].assessment_id])
+        } else if (activeCount >= 2) {
+          await client.query(`update assessments set status='under_review' where id=$1`, [updated.rows[0].assessment_id])
+        } else {
+          const assessment = (await client.query<{
+            candidate_id: string
+            questions: Array<{ id: string; rubric: string[] }>
+            answers: Record<string, Record<string, unknown>>
+          }>('select candidate_id,questions,answers from assessments where id=$1 for update', [updated.rows[0].assessment_id])).rows[0]
+          const finalAnswers = scoreReview(assessment.questions, assessment.answers, updated.rows[0].rubric_scores)
+          await client.query(
+            `update assessments set status='published',final_answers=$1,adjudicated_at=now() where id=$2`,
+            [JSON.stringify(finalAnswers), updated.rows[0].assessment_id],
+          )
+          await client.query(
+            `update review_assignments set status='declined'
+             where assessment_id=$1 and status='available'`,
+            [updated.rows[0].assessment_id],
+          )
+          await client.query(
+            `insert into notification_outbox(recipient_id,event_type,payload)
+             values($1,'results_ready',jsonb_build_object('assessment_id',$2::uuid,'subject','Your Zobology results are ready'))`,
+            [assessment.candidate_id, updated.rows[0].assessment_id],
+          )
+          await client.query(
+            `insert into audit_log(actor_id,action,entity_type,entity_id)
+             values($1,'single_review_result_published','assessment',$2)`,
+            [request.user!.id, updated.rows[0].assessment_id],
+          )
+        }
       }
     })
     response.json({ state: await loadPortalState(request.user!), user: publicUser(request.user!) })

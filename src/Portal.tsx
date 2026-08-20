@@ -254,12 +254,23 @@ export default function Portal() {
         return
       }
     }
-    const reviews = database.reviews.map((item) => item.id === activeReview.id ? completedReview : item)
-    const completeCount = reviews.filter((item) => item.submissionId === activeSubmission.id && item.status === 'completed').length
+    let reviews = database.reviews.map((item) => item.id === activeReview.id ? completedReview : item)
+    const assessmentReviews = reviews.filter((item) => item.submissionId === activeSubmission.id)
+    const completeCount = assessmentReviews.filter((item) => item.status === 'completed').length
+    const activeCount = assessmentReviews.filter((item) => ['accepted', 'in_review', 'completed'].includes(item.status)).length
+    const singleReviewComplete = completeCount === 1 && activeCount === 1
+    if (singleReviewComplete) reviews = reviews.map((item) => item.submissionId === activeSubmission.id && item.status === 'available' ? { ...item, status: 'declined' as const } : item)
     const submissions = database.submissions.map((item) => item.id === activeSubmission.id
-      ? { ...item, status: completeCount >= 2 ? 'adjudication' as const : 'under_review' as const }
+      ? completeCount >= 2
+        ? { ...item, status: 'adjudication' as const }
+        : singleReviewComplete
+          ? { ...item, status: 'published' as const, finalAnswers: scoreReview(activeSubmission, completedReview), adjudicatedAt: new Date().toISOString() }
+          : { ...item, status: 'under_review' as const }
       : item)
-    if (!backendEnabled) updateDatabase({ ...database, reviews, submissions })
+    const notifications = singleReviewComplete
+      ? [...database.notifications, { id: createId('NTF'), recipientId: activeSubmission.candidateId, type: 'results_ready' as const, subject: 'Your Zobology results are ready', createdAt: new Date().toISOString() }]
+      : database.notifications
+    if (!backendEnabled) updateDatabase({ ...database, reviews, submissions, notifications })
     setActiveReviewId(null)
     setReviewerView('queue')
     window.scrollTo(0, 0)
@@ -393,7 +404,7 @@ export default function Portal() {
                 industry={candidateSubmission.industry}
                 questions={candidateSubmission.questions}
                 answers={candidateSubmission.finalAnswers}
-                reviewerName="Zobology expert panel"
+                reviewerName={candidateSubmission.assignedReviewerIds.length > 1 ? 'Zobology expert panel' : 'Zobology industry mentor'}
                 onRetake={() => { setStartingNewAssessment(true); setProfile({ ...initialProfile, name: `${account.firstName || ''} ${account.lastName || ''}`.trim() }); setCandidateView('profile'); window.scrollTo(0, 0) }}
               />
             )}
