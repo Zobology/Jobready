@@ -691,6 +691,8 @@ export function Results({
   answers,
   reviewerName,
   onRetake,
+  audience = 'candidate',
+  onBack,
 }: {
   profile: CandidateProfile
   role: (typeof roles)[number]
@@ -698,7 +700,9 @@ export function Results({
   questions: Question[]
   answers: Record<string, AssessmentAnswer>
   reviewerName: string
-  onRetake: () => void
+  onRetake?: () => void
+  audience?: 'candidate' | 'mentor'
+  onBack?: () => void
 }) {
   const scores = useMemo(() => {
     const average = (dimension: Dimension) => {
@@ -736,6 +740,7 @@ export function Results({
   const benchmarkGap = benchmark - scores.overall
   const level = scores.overall >= benchmark + 10 ? 'Job ready' : scores.overall >= benchmark ? 'Nearly ready' : scores.overall >= 50 ? 'Developing' : 'Building foundations'
   const firstName = profile.name.trim().split(' ')[0] || 'there'
+  const mentorView = audience === 'mentor'
   const communicationQuestion = questions.find((question) => question.competency === 'Communication' && question.responseType === 'audio')
   const simulationQuestion = questions.find((question) => question.dimension === 'simulation')
   const communicationAnswer = communicationQuestion ? answers[communicationQuestion.id] : undefined
@@ -745,11 +750,12 @@ export function Results({
     <div className="results-page">
       <section className="results-hero">
         <div className="results-title">
-          <div className="eyebrow"><span /> Expert review complete</div>
-          <h1>{firstName}, here’s your readiness snapshot.</h1>
+          <div className="eyebrow"><span /> {mentorView ? 'Mentor evaluation report' : 'Expert review complete'}</div>
+          <h1>{mentorView ? `${profile.name}'s evaluation result.` : `${firstName}, here’s your readiness snapshot.`}</h1>
           <p>{industry.name} · {role.name} · {profile.level}</p>
         </div>
-        <button className="secondary-button" onClick={onRetake}><RotateCcw size={16} /> Retake</button>
+        {onRetake && <button className="secondary-button" onClick={onRetake}><RotateCcw size={16} /> Retake</button>}
+        {onBack && <button className="secondary-button" onClick={onBack}><ArrowLeft size={16} /> Back to dashboard</button>}
       </section>
 
       <section className="score-overview">
@@ -760,7 +766,7 @@ export function Results({
           <div className="overall-copy">
             <span>Overall job readiness</span>
             <h2>{level}</h2>
-            <p>{benchmarkGap > 0 ? <>You’re <strong>{benchmarkGap} points</strong> from the {profile.level.toLowerCase()} benchmark of {benchmark}.</> : benchmarkGap < 0 ? <>You’re <strong>{Math.abs(benchmarkGap)} points above</strong> the {profile.level.toLowerCase()} benchmark of {benchmark}.</> : <>You’ve <strong>met</strong> the {profile.level.toLowerCase()} benchmark of {benchmark}.</>}</p>
+            <p>{benchmarkGap > 0 ? <>{mentorView ? `${firstName} is` : 'You’re'} <strong>{benchmarkGap} points</strong> from the {profile.level.toLowerCase()} benchmark of {benchmark}.</> : benchmarkGap < 0 ? <>{mentorView ? `${firstName} is` : 'You’re'} <strong>{Math.abs(benchmarkGap)} points above</strong> the {profile.level.toLowerCase()} benchmark of {benchmark}.</> : <>{mentorView ? `${firstName} has` : 'You’ve'} <strong>met</strong> the {profile.level.toLowerCase()} benchmark of {benchmark}.</>}</p>
           </div>
           <div className="benchmark-marker"><Target size={16} /><span>Target benchmark<strong>{benchmark}/100</strong></span></div>
         </div>
@@ -775,7 +781,7 @@ export function Results({
 
       <section className="insight-grid">
         <div className="insight-card strengths-card">
-          <div className="insight-heading"><span><CheckCircle2 size={19} /></span><div><h3>Your strongest capabilities</h3><p>Skills you can build on immediately</p></div></div>
+          <div className="insight-heading"><span><CheckCircle2 size={19} /></span><div><h3>{mentorView ? 'Strongest capabilities' : 'Your strongest capabilities'}</h3><p>Skills {mentorView ? 'the candidate can' : 'you can'} build on immediately</p></div></div>
           <div className="ranked-list">
             {strengths.map((item, index) => (
               <div key={`${item.name}-${index}`}><i>{index + 1}</i><span><strong>{item.name}</strong><small>{dimensionNames[item.dimension]}</small></span><b>{item.score}</b></div>
@@ -783,7 +789,7 @@ export function Results({
           </div>
         </div>
         <div className="insight-card gaps-card">
-          <div className="insight-heading"><span><Target size={19} /></span><div><h3>{hasBenchmarkGap ? 'Your priority skill gaps' : 'Capabilities to strengthen'}</h3><p>{hasBenchmarkGap ? 'Closing these will move your score fastest' : 'Relative priorities for continued growth'}</p></div></div>
+          <div className="insight-heading"><span><Target size={19} /></span><div><h3>{hasBenchmarkGap ? mentorView ? 'Priority skill gaps' : 'Your priority skill gaps' : 'Capabilities to strengthen'}</h3><p>{hasBenchmarkGap ? `Closing these will move ${mentorView ? 'the score' : 'your score'} fastest` : 'Relative priorities for continued growth'}</p></div></div>
           <div className="ranked-list">
             {gaps.map((item, index) => (
               <div key={`${item.name}-${index}`}><i>{index + 1}</i><span><strong>{item.name}</strong><small>{item.dimension === 'core' ? 'Core employability' : item.dimension === 'industry' ? industry.name : role.name}</small></span><b>{item.score}</b></div>
@@ -813,7 +819,7 @@ export function Results({
       </section>
 
       <section className="benchmark-section">
-        <div><span className="section-label">What “job ready” means here</span><h2>Your profile benchmark</h2><p>A job-ready {role.name.toLowerCase()} candidate in {industry.name} should independently demonstrate these capabilities.</p></div>
+        <div><span className="section-label">What “job ready” means here</span><h2>{mentorView ? 'Candidate profile benchmark' : 'Your profile benchmark'}</h2><p>A job-ready {role.name.toLowerCase()} candidate in {industry.name} should independently demonstrate these capabilities.</p></div>
         <div className="benchmark-list">
           {role.competencies.slice(0, 4).map((item) => <span key={item}><Check size={14} /> {item}</span>)}
           {industry.contexts.slice(0, 2).map((item) => <span key={item}><Check size={14} /> {item} context</span>)}

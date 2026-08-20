@@ -778,6 +778,7 @@ button { color: inherit; }
 .review-status.in_review { color: #356f91; background: #eaf3f8; }
 .review-status.completed { color: #287563; background: #e5f3ee; }
 .review-action { display: inline-flex; align-items: center; justify-content: center; gap: 5px; min-height: 34px; padding: 0 10px; color: white; background: var(--green); border: 0; border-radius: 8px; font-size: 9px; font-weight: 700; cursor: pointer; }
+.evaluation-action { white-space: nowrap; }
 .review-opportunity-actions { display: flex; gap: 6px; }
 .review-opportunity-actions button { min-height: 34px; padding: 0 10px; border-radius: 8px; font-size: 9px; font-weight: 700; cursor: pointer; }
 .decline-review { color: #687a74; background: white; border: 1px solid #d5dfdc; }
