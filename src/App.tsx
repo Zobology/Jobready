@@ -8,6 +8,8 @@ import {
   ChevronDown,
   CircleUserRound,
   Clock3,
+  Download,
+  FileSpreadsheet,
   GraduationCap,
   Lightbulb,
   Mic,
@@ -489,8 +491,8 @@ export function Assessment({
           ) : (
             <WrittenResponse
               question={question}
-              value={response?.text ?? ''}
-              onChange={(text) => onAnswer(question.id, evaluateWrittenResponse(question, text))}
+              value={response}
+              onChange={(answer) => onAnswer(question.id, answer)}
             />
           )}
 
@@ -520,20 +522,65 @@ function WrittenResponse({
   onChange,
 }: {
   question: Question
-  value: string
-  onChange: (value: string) => void
+  value?: AssessmentAnswer
+  onChange: (value: AssessmentAnswer) => void
 }) {
-  const words = value.trim() ? value.trim().split(/\s+/).length : 0
+  const text = value?.text ?? ''
+  const words = text.trim() ? text.trim().split(/\s+/).length : 0
+  const [fileError, setFileError] = useState('')
+
+  function updateText(nextText: string) {
+    onChange({
+      ...evaluateWrittenResponse(question, nextText),
+      workbookUrl: value?.workbookUrl,
+      workbookName: value?.workbookName,
+      workbookFile: value?.workbookFile,
+    })
+  }
+
+  function updateWorkbook(file?: File) {
+    setFileError('')
+    if (file && (!file.name.toLowerCase().endsWith('.xlsx') || file.size > 25 * 1024 * 1024)) {
+      setFileError('Upload a valid .xlsx workbook no larger than 25 MB.')
+      return
+    }
+    if (value?.workbookUrl?.startsWith('blob:')) URL.revokeObjectURL(value.workbookUrl)
+    const evaluated = evaluateWrittenResponse(question, text)
+    onChange(file ? {
+      ...evaluated,
+      workbookFile: file,
+      workbookName: file.name,
+      workbookUrl: URL.createObjectURL(file),
+    } : evaluated)
+  }
 
   return (
     <div className="written-response">
+      {question.sampleData && (
+        <section className="sample-data-task">
+          <div className="sample-data-icon"><FileSpreadsheet size={22} /></div>
+          <div><strong>{question.sampleData.title}</strong><p>{question.sampleData.description}</p></div>
+          <a href={question.sampleData.downloadUrl} download={question.sampleData.fileName}><Download size={15} /> Download Excel data</a>
+        </section>
+      )}
       <div className="response-label"><span>Your response</span><small>{words} words</small></div>
       <textarea
-        value={value}
-        onChange={(event) => onChange(event.target.value)}
+        value={text}
+        onChange={(event) => updateText(event.target.value)}
         placeholder={`Write your ${question.competency.toLowerCase()} response here…`}
         rows={7}
       />
+      {question.sampleData && (
+        <>
+          <label className="workbook-upload">
+            <Upload size={17} />
+            <span><strong>{value?.workbookName || 'Upload your completed Excel workbook'}</strong><small>.xlsx only · maximum 25 MB</small></span>
+            <input type="file" accept=".xlsx,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" onChange={(event) => updateWorkbook(event.target.files?.[0])} />
+            {value?.workbookName && <Check size={16} />}
+          </label>
+          {fileError && <p className="workbook-error">{fileError}</p>}
+        </>
+      )}
       <div className="writing-helper"><Lightbulb size={14} /> Focus on what you would do, why you would do it, and how you would measure success.</div>
     </div>
   )
@@ -632,7 +679,9 @@ function AudioResponse({ question, value, onChange }: { question: Question; valu
 
 function isResponseComplete(question: Question, answer?: AssessmentAnswer) {
   if (!answer) return false
-  return question.responseType === 'audio' ? Boolean(answer.audioUrl && (answer.duration ?? 0) >= 1) : (answer.text?.trim().split(/\s+/).length ?? 0) >= 8
+  if (question.responseType === 'audio') return Boolean(answer.audioUrl && (answer.duration ?? 0) >= 1)
+  const hasWrittenApproach = (answer.text?.trim().split(/\s+/).length ?? 0) >= 8
+  return question.sampleData ? hasWrittenApproach && Boolean(answer.workbookFile || answer.workbookUrl) : hasWrittenApproach
 }
 
 async function analyzeAudioResponse(blob: Blob, audioUrl: string, duration: number, competency: string, rubric: string[]): Promise<AssessmentAnswer> {

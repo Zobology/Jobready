@@ -6,6 +6,7 @@ import {
   ClipboardCheck,
   Clock3,
   FileText,
+  FileSpreadsheet,
   Inbox,
   Mic,
   ShieldCheck,
@@ -201,11 +202,13 @@ export function ReviewWorkspace({
         <article className="review-evidence-card">
           <div className="evidence-label"><FileText size={15} /> Candidate evidence · {question.bankId}</div>
           <h1>{question.prompt}</h1>
+          {question.sampleData && <a className="source-workbook" href={question.sampleData.downloadUrl} target="_blank" rel="noreferrer"><FileSpreadsheet size={15} /> Download source dataset</a>}
           <div className="candidate-response">
             <div><span>{question.responseType === 'audio' ? <Mic size={16} /> : <FileText size={16} />}<strong>{question.responseType === 'audio' ? 'Audio response' : 'Written response'}</strong></span><small>{question.responseType === 'audio' ? `${answer?.duration ?? 0}s` : `${answer?.text?.trim().split(/\s+/).length ?? 0} words`}</small></div>
             {question.responseType === 'audio' ? (
               <>{answer?.audioUrl && <audio controls src={answer.audioUrl} />}<p>{answer?.transcript || 'Transcript unavailable. Review the original recording.'}</p></>
             ) : <p>{answer?.text || 'No written response was captured.'}</p>}
+            {answer?.workbookUrl && <a className="submitted-workbook" href={answer.workbookUrl} target="_blank" rel="noreferrer"><FileSpreadsheet size={16} /><span><strong>Open completed workbook</strong><small>{answer.workbookName || 'Candidate Excel analysis'}</small></span></a>}
           </div>
         </article>
 

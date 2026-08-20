@@ -44,6 +44,15 @@ export interface Question {
   diagnosticTags: DiagnosticTag[]
   tags: string[]
   followUp?: QuestionBankItem['followUp']
+  sampleData?: SampleDataTask
+}
+
+export interface SampleDataTask {
+  id: 'core-data-understanding'
+  title: string
+  description: string
+  fileName: string
+  downloadUrl: string
 }
 
 const competencyDescriptions: Record<string, string> = {
@@ -226,13 +235,57 @@ function toQuestion(item: QuestionBankItem, occurrence: number): Question {
   }
 }
 
+function dataVariant(roleName: string) {
+  if (/HR|Talent|People|Recruit|Employee/i.test(roleName)) return 'people'
+  if (/Operations|Supply|Logistics|Procurement|Inventory|Warehouse|Manufacturing|Quality/i.test(roleName)) return 'operations'
+  if (/Software|Technology|Product|Cloud|Cyber|QA|Engineering/i.test(roleName)) return 'technology'
+  if (/Customer|Client|Service|Success|Relationship|Support/i.test(roleName)) return 'customer'
+  if (/Data|Analyst|Finance|Accounting|Audit|Tax|Investment|Credit|Marketing|Sales/i.test(roleName)) return 'commercial'
+  return 'general'
+}
+
+function addSampleDataTask(questions: Question[], role: RoleFamily, industry: Industry, profile: AssessmentProfile) {
+  const preferredCompetency = /Data|Analyst|Finance|Accounting|Operations|Supply|Marketing|Sales/i.test(role.name)
+    ? 'Analytical Thinking'
+    : 'Numerical Ability'
+  const question = questions.find((item) => item.dimension === 'core' && item.competency === preferredCompetency && item.assessmentModes.includes('application'))
+    ?? questions.find((item) => item.dimension === 'core' && ['Analytical Thinking', 'Numerical Ability'].includes(item.competency))
+  if (!question) return questions
+
+  const variant = dataVariant(role.name)
+  const query = new URLSearchParams({
+    role: role.name,
+    industry: industry.name,
+    level: profile.level,
+    education: profile.education,
+    experienceType: profile.experienceType,
+    variant,
+  })
+  const sampleData: SampleDataTask = {
+    id: 'core-data-understanding',
+    title: `${industry.name} ${role.name} data exercise`,
+    description: 'Download the source workbook, complete your analysis in the file, then upload the completed workbook and explain your approach below.',
+    fileName: `zobology-${role.code.toLowerCase()}-${industry.code.toLowerCase()}-data-exercise.xlsx`,
+    downloadUrl: `/api/assessment-data/core-data-understanding?${query.toString()}`,
+  }
+  return questions.map((item) => item.id === question.id ? {
+    ...item,
+    prompt: `${item.prompt} Use the attached Excel dataset as your source. Show your calculations or analysis in the workbook, identify the most important patterns, and recommend the next action.`,
+    guidance: `${item.guidance} Submit both the completed workbook and a concise written explanation of your approach, assumptions, findings, and recommendation.`,
+    rubric: [...new Set([...item.rubric, 'Spreadsheet accuracy', 'Data interpretation', 'Method transparency'])],
+    tags: [...new Set([...item.tags, 'excel-work-sample', `data-variant-${variant}`])],
+    sampleData,
+  } : item)
+}
+
 export function buildAssessment(role: RoleFamily, industry: Industry, profile: AssessmentProfile): Question[] {
   const bank = getAssessmentBank(role.code, industry.code)
   const core = selectMixed(bank.core, 10, applicationTarget('core', 10, profile), profile)
   const roleItems = selectMixed(bank.role, 8, applicationTarget('role', 8, profile), profile)
   const industryItems = selectMixed(bank.industry, 5, applicationTarget('industry', 5, profile), profile)
   const items = [...core, ...roleItems, ...industryItems, ...(bank.simulation ? [bank.simulation] : [])]
-  return items.map((item) => adaptItem(item, profile)).map(toQuestion)
+  const questions = items.map((item) => adaptItem(item, profile)).map(toQuestion)
+  return addSampleDataTask(questions, role, industry, profile)
 }
 
 export const educationOptions = [

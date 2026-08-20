@@ -186,6 +186,10 @@ export default function Portal() {
             const uploaded = await api.upload('audio', blob, `${questionId}.webm`)
             submittedAnswers[questionId] = { ...answer, audioUrl: uploaded.url }
           }
+          if (answer.workbookFile) {
+            const uploaded = await api.upload('answer_spreadsheet', answer.workbookFile, answer.workbookName || `${questionId}.xlsx`)
+            submittedAnswers[questionId] = { ...submittedAnswers[questionId], workbookFile: undefined, workbookUrl: uploaded.url, workbookName: answer.workbookName || 'completed-analysis.xlsx' }
+          }
         }
         submittedProfile = { ...submittedProfile, resumeName: profile.resumeName, resumeKey }
         await api.saveProfile({ ...submittedProfile, resumeKey })

@@ -33,7 +33,7 @@ export const api = {
   },
   signout() { return request<void>('/auth/signout', { method: 'POST' }) },
   saveProfile(profile: Record<string, unknown>) { return request<void>('/candidate/profile', { method: 'PUT', body: JSON.stringify(profile) }) },
-  async upload(kind: 'audio' | 'resume', blob: Blob, filename: string) {
+  async upload(kind: 'audio' | 'resume' | 'answer_spreadsheet', blob: Blob, filename: string) {
     const form = new FormData()
     form.append('file', blob, filename)
     return request<{ key: string; url: string }>(`/uploads/${kind}`, { method: 'POST', body: form })

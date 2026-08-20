@@ -13,6 +13,7 @@ import { pool, transaction } from './db.js'
 import { assignBestReviewers, loadPortalState } from './state.js'
 import { readFile, storageConfigured, uploadFile } from './storage.js'
 import { extractResumeSignals } from './resume.js'
+import { buildSampleWorkbook, type DataVariant } from './sampleData.js'
 
 const app = express()
 const port = Number(process.env.PORT ?? 10000)
@@ -21,7 +22,7 @@ const upload = multer({
   storage: multer.memoryStorage(),
   limits: { fileSize: 25 * 1024 * 1024, files: 1 },
   fileFilter: (_request, file, callback) => {
-    const allowed = /^(audio\/(webm|ogg|mpeg|mp4)|application\/(pdf|msword|vnd\.openxmlformats-officedocument\.wordprocessingml\.document))$/
+    const allowed = /^(audio\/(webm|ogg|mpeg|mp4)|application\/(pdf|msword|vnd\.openxmlformats-officedocument\.(wordprocessingml\.document|spreadsheetml\.sheet)))$/
     if (allowed.test(file.mimetype)) callback(null, true)
     else callback(new Error('Unsupported file type'))
   },
@@ -40,6 +41,7 @@ app.use((request, response, next) => {
 })
 
 const authLimit = rateLimit({ windowMs: 15 * 60_000, limit: 20, standardHeaders: true, legacyHeaders: false })
+const dataDownloadLimit = rateLimit({ windowMs: 60_000, limit: 30, standardHeaders: true, legacyHeaders: false })
 const credentialsSchema = z.object({ email: z.string().email().max(254), password: z.string().min(8).max(128) })
 const publicUser = (user: AuthenticatedUser) => ({
   id: user.id,
@@ -70,6 +72,25 @@ app.get('/api/health', async (_request, response, next) => {
   try {
     await pool.query('select 1')
     response.json({ status: 'ok', database: 'connected', storage: storageConfigured() })
+  } catch (error) { next(error) }
+})
+
+app.get('/api/assessment-data/core-data-understanding', requireUser, dataDownloadLimit, async (request, response, next) => {
+  try {
+    const query = z.object({
+      role: z.string().trim().min(1).max(120),
+      industry: z.string().trim().min(1).max(120),
+      level: z.string().trim().min(1).max(80),
+      education: z.string().trim().min(1).max(160),
+      experienceType: z.enum(['fresher', 'experienced']),
+      variant: z.enum(['commercial', 'operations', 'people', 'customer', 'technology', 'general']),
+    }).parse(request.query)
+    const workbook = await buildSampleWorkbook({ ...query, variant: query.variant as DataVariant })
+    const fileName = `zobology-${query.role}-${query.industry}-data-exercise.xlsx`.toLowerCase().replace(/[^a-z0-9.]+/g, '-').replace(/-+/g, '-')
+    response.setHeader('content-type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')
+    response.setHeader('content-disposition', `attachment; filename="${fileName}"`)
+    response.setHeader('cache-control', 'private, max-age=300')
+    response.send(workbook)
   } catch (error) { next(error) }
 })
 
@@ -158,9 +179,18 @@ app.put('/api/candidate/profile', requireRole('candidate'), async (request, resp
 
 app.post('/api/uploads/:kind', requireRole('candidate', 'reviewer'), upload.single('file'), async (request, response, next) => {
   try {
-    const kind = z.enum(['audio', 'resume']).parse(request.params.kind)
+    const kind = z.enum(['audio', 'resume', 'answer_spreadsheet']).parse(request.params.kind)
     if (request.user!.role === 'reviewer' && kind !== 'resume') return response.status(403).json({ error: 'Mentors can only upload a resume' })
     if (!request.file) return response.status(400).json({ error: 'File is required' })
+    const validContentType = kind === 'audio'
+      ? request.file.mimetype.startsWith('audio/')
+      : kind === 'answer_spreadsheet'
+        ? request.file.mimetype === 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
+        : ['application/pdf', 'application/msword', 'application/vnd.openxmlformats-officedocument.wordprocessingml.document'].includes(request.file.mimetype)
+    if (!validContentType) return response.status(400).json({ error: `The uploaded file is not valid for ${kind.replace('_', ' ')}` })
+    if (kind === 'answer_spreadsheet' && (request.file.buffer[0] !== 0x50 || request.file.buffer[1] !== 0x4b)) {
+      return response.status(400).json({ error: 'The uploaded workbook is not a valid .xlsx file' })
+    }
     const key = await uploadFile(request.user!.id, kind, request.file)
     await pool.query(
       'insert into stored_files (owner_id, object_key, kind, content_type, original_name, size_bytes) values ($1,$2,$3,$4,$5,$6)',

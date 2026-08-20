@@ -14,7 +14,7 @@ const client = bucket ? new S3Client({
 
 export function storageConfigured() { return Boolean(client && bucket) }
 
-export async function uploadFile(userId: string, kind: 'audio' | 'resume', file: Express.Multer.File) {
+export async function uploadFile(userId: string, kind: 'audio' | 'resume' | 'answer_spreadsheet', file: Express.Multer.File) {
   if (!client || !bucket) throw new Error('Private object storage is not configured')
   const extension = file.originalname.split('.').pop()?.replace(/[^a-z0-9]/gi, '').toLowerCase() || 'bin'
   const key = `${kind}/${userId}/${randomUUID()}.${extension}`

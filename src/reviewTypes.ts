@@ -17,6 +17,9 @@ export interface AssessmentAnswer {
   audioUrl?: string
   duration?: number
   transcript?: string
+  workbookUrl?: string
+  workbookName?: string
+  workbookFile?: File
   score: number
   feedback: string
 }

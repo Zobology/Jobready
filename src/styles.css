@@ -513,6 +513,20 @@ button { color: inherit; }
 .written-response textarea:focus { border-color: var(--green); box-shadow: 0 0 0 3px rgba(22, 121, 104, .09); }
 .writing-helper { display: flex; align-items: center; gap: 6px; margin-top: 8px; color: #82928d; font-size: 10px; }
 .writing-helper svg { color: var(--green); }
+.sample-data-task { display: grid; grid-template-columns: auto 1fr auto; align-items: center; gap: 13px; margin-bottom: 18px; padding: 15px 16px; background: #f2f8f5; border: 1px solid #d8e8e1; border-radius: 13px; }
+.sample-data-icon { width: 42px; height: 42px; display: grid; place-items: center; color: white; background: var(--green); border-radius: 11px; }
+.sample-data-task > div:nth-child(2) strong { display: block; color: #294b42; font-size: 11px; }
+.sample-data-task > div:nth-child(2) p { margin: 4px 0 0; color: #71857f; font-size: 9px; line-height: 1.5; }
+.sample-data-task > a { min-height: 36px; display: inline-flex; align-items: center; justify-content: center; gap: 6px; padding: 0 12px; color: white; background: var(--green); border-radius: 9px; font-size: 9px; font-weight: 800; text-decoration: none; white-space: nowrap; }
+.workbook-upload { min-height: 58px; display: flex; align-items: center; gap: 11px; margin-top: 11px; padding: 10px 13px; color: #587069; background: #fafcfb; border: 1px dashed #b9cec7; border-radius: 11px; cursor: pointer; position: relative; }
+.workbook-upload > svg:first-child { color: var(--green); }
+.workbook-upload > span { flex: 1; }
+.workbook-upload strong, .workbook-upload small { display: block; }
+.workbook-upload strong { color: #3c574f; font-size: 10px; }
+.workbook-upload small { margin-top: 3px; color: #899994; font-size: 8px; }
+.workbook-upload input { position: absolute; inset: 0; opacity: 0; cursor: pointer; }
+.workbook-upload > svg:last-child { color: var(--green); }
+.workbook-error { margin: 6px 0 0; color: #b25445; font-size: 9px; }
 
 .analysis-rubric { margin-top: 17px; padding: 13px 15px; background: #f4f8f6; border: 1px solid #e2ebe7; border-radius: 11px; }
 .analysis-rubric > div:first-child { display: flex; align-items: center; gap: 9px; }
@@ -822,6 +836,7 @@ button { color: inherit; }
 .review-evidence-card, .rubric-review-card { margin-top: 16px; padding: 25px 27px; background: white; border: 1px solid #dfe7e4; border-radius: 15px; }
 .evidence-label { display: flex; align-items: center; gap: 7px; color: var(--green); font-size: 9px; font-weight: 800; letter-spacing: .4px; text-transform: uppercase; }
 .review-evidence-card h1 { margin: 13px 0 18px; font: 700 21px/1.4 'Manrope', sans-serif; letter-spacing: -.5px; }
+.source-workbook { display: inline-flex; align-items: center; gap: 6px; margin: -5px 0 15px; color: var(--green); font-size: 9px; font-weight: 800; text-decoration: none; }
 .candidate-response { padding: 17px 18px; background: #f6f9f7; border: 1px solid #e4ebe8; border-radius: 11px; }
 .candidate-response > div { display: flex; align-items: center; justify-content: space-between; }
 .candidate-response > div span { display: flex; align-items: center; gap: 7px; color: var(--green); }
@@ -829,6 +844,11 @@ button { color: inherit; }
 .candidate-response > div small { color: #899793; font-size: 9px; }
 .candidate-response > p { max-height: 170px; margin: 13px 0 0; color: #506660; font-size: 11px; line-height: 1.7; overflow-y: auto; white-space: pre-wrap; }
 .candidate-response audio { width: 100%; height: 36px; margin-top: 13px; }
+.submitted-workbook { display: flex; align-items: center; gap: 9px; margin-top: 13px; padding: 11px 12px; color: var(--green); background: white; border: 1px solid #dbe6e2; border-radius: 9px; text-decoration: none; }
+.submitted-workbook span { flex: 1; }
+.submitted-workbook strong, .submitted-workbook small { display: block; }
+.submitted-workbook strong { font-size: 9px; }
+.submitted-workbook small { margin-top: 2px; color: #82938d; font-size: 8px; }
 .rubric-review-heading { display: flex; align-items: center; justify-content: space-between; padding-bottom: 18px; border-bottom: 1px solid #e7ecea; }
 .rubric-review-heading > div { display: flex; align-items: center; gap: 9px; }
 .rubric-review-heading svg { color: var(--green); }
@@ -863,6 +883,8 @@ button { color: inherit; }
 }
 
 @media (max-width: 600px) {
+  .sample-data-task { grid-template-columns: auto 1fr; }
+  .sample-data-task > a { grid-column: 1 / -1; }
   .submission-card { padding: 32px 20px 26px; }
   .submission-card h1 { font-size: 27px; }
   .submission-summary { grid-template-columns: 1fr; }
