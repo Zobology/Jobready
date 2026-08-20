@@ -153,8 +153,10 @@ export function ReviewWorkspace({
   }).length
   const currentComplete = question.rubric.every((criterion) => questionReview.criteria[criterion]?.score)
   const allComplete = reviewedCount === questions.length
+  const readOnly = review.status === 'completed'
 
   function updateCriterion(criterion: string, score: RubricScore) {
+    if (readOnly) return
     onChange({
       ...review,
       status: 'in_review',
@@ -170,6 +172,7 @@ export function ReviewWorkspace({
   }
 
   function updateComment(comment: string) {
+    if (readOnly) return
     onChange({
       ...review,
       status: 'in_review',
@@ -212,17 +215,19 @@ export function ReviewWorkspace({
             {question.rubric.map((criterion) => (
               <div className="criterion-row" key={criterion}>
                 <strong>{criterion}</strong>
-                <div>{scoreLevels.map((level) => <button key={level.score} title={level.short} className={questionReview.criteria[criterion]?.score === level.score ? 'selected' : ''} onClick={() => updateCriterion(criterion, level.score)}><i>{level.score}</i><span>{level.label}</span></button>)}</div>
+                <div>{scoreLevels.map((level) => <button key={level.score} disabled={readOnly} title={level.short} className={questionReview.criteria[criterion]?.score === level.score ? 'selected' : ''} onClick={() => updateCriterion(criterion, level.score)}><i>{level.score}</i><span>{level.label}</span></button>)}</div>
               </div>
             ))}
           </div>
-          <label className="review-comment"><span>Mentor feedback <small>Recommended</small></span><textarea rows={3} value={questionReview.comment} onChange={(event) => updateComment(event.target.value)} placeholder="Record evidence, strengths, gaps, and actionable feedback…" /></label>
+          <label className="review-comment"><span>Mentor feedback <small>{readOnly ? 'Final' : 'Recommended'}</small></span><textarea disabled={readOnly} rows={3} value={questionReview.comment} onChange={(event) => updateComment(event.target.value)} placeholder="Record evidence, strengths, gaps, and actionable feedback…" /></label>
         </section>
 
         <div className="review-navigation">
           <button className="secondary-button" disabled={currentIndex === 0} onClick={() => onSelect(currentIndex - 1)}><ArrowLeft size={16} /> Previous</button>
           <span><Clock3 size={14} /> Review saved automatically</span>
-          {currentIndex < questions.length - 1
+          {readOnly
+            ? <button className="primary-button compact" onClick={onExit}><CheckCircle2 size={16} /> Review complete</button>
+            : currentIndex < questions.length - 1
             ? <button className="primary-button compact" disabled={!currentComplete} onClick={() => onSelect(currentIndex + 1)}>Save & next <ArrowRight size={16} /></button>
             : <button className="primary-button compact" disabled={!allComplete} onClick={onFinalize}><CheckCircle2 size={16} /> Finalize review</button>}
         </div>

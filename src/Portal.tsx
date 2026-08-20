@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState, type FormEvent } from 'react'
+import { useEffect, useMemo, useRef, useState, type FormEvent } from 'react'
 import {
   ArrowRight,
   Bell,
@@ -100,6 +100,9 @@ export default function Portal() {
   const [reviewQuestionIndex, setReviewQuestionIndex] = useState(0)
   const [mobileMenu, setMobileMenu] = useState(false)
   const [operationError, setOperationError] = useState('')
+  const reviewSaveTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const pendingReviewSave = useRef<HumanReview | null>(null)
+  const reviewSaveQueue = useRef<Promise<void>>(Promise.resolve())
 
   useEffect(() => {
     if (backendEnabled) {
@@ -200,13 +203,41 @@ export default function Portal() {
     window.scrollTo(0, 0)
   }
 
+  function enqueueReviewSave(review: HumanReview) {
+    reviewSaveQueue.current = reviewSaveQueue.current
+      .catch(() => undefined)
+      .then(async () => { await api.saveReview(review) })
+    reviewSaveQueue.current.catch((error: Error) => setOperationError(error.message))
+  }
+
+  function flushReviewSave() {
+    if (reviewSaveTimer.current) {
+      clearTimeout(reviewSaveTimer.current)
+      reviewSaveTimer.current = null
+    }
+    if (pendingReviewSave.current) {
+      enqueueReviewSave(pendingReviewSave.current)
+      pendingReviewSave.current = null
+    }
+    return reviewSaveQueue.current
+  }
+
   function updateActiveReview(review: HumanReview) {
     if (!activeReview) return
     updateDatabase({
       ...database,
       reviews: database.reviews.map((item) => item.id === activeReview.id ? { ...item, ...review } : item),
     })
-    if (backendEnabled) api.saveReview(review).catch((error: Error) => setOperationError(error.message))
+    if (backendEnabled) {
+      pendingReviewSave.current = review
+      if (reviewSaveTimer.current) clearTimeout(reviewSaveTimer.current)
+      reviewSaveTimer.current = setTimeout(() => {
+        reviewSaveTimer.current = null
+        if (!pendingReviewSave.current) return
+        enqueueReviewSave(pendingReviewSave.current)
+        pendingReviewSave.current = null
+      }, 400)
+    }
   }
 
   async function finalizeReview() {
@@ -214,7 +245,9 @@ export default function Portal() {
     const completedReview = { ...activeReview, status: 'completed' as const, completedAt: new Date().toISOString() }
     if (backendEnabled) {
       try {
+        await flushReviewSave()
         const result = await api.saveReview(completedReview)
+        reviewSaveQueue.current = Promise.resolve()
         updateDatabase(result.state)
       } catch (error) {
         setOperationError((error as Error).message)

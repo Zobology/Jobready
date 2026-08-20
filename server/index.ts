@@ -296,7 +296,15 @@ app.put('/api/reviewer/reviews/:id', requireRole('reviewer'), async (request, re
          where id=$3 and reviewer_id=$4 and status in ('accepted', 'in_review') returning assessment_id`,
         [JSON.stringify(input.questionReviews), input.status, request.params.id, request.user!.id],
       )
-      if (!updated.rows[0]) throw Object.assign(new Error('Review not found'), { status: 404 })
+      if (!updated.rows[0]) {
+        const existing = await client.query<{ status: string }>(
+          'select status from review_assignments where id=$1 and reviewer_id=$2',
+          [request.params.id, request.user!.id],
+        )
+        if (existing.rows[0]?.status === 'completed') return
+        if (existing.rows[0]) throw Object.assign(new Error('Accept this review before entering scores'), { status: 409 })
+        throw Object.assign(new Error('Review not found'), { status: 404 })
+      }
       if (input.status === 'completed') {
         const count = await client.query<{ count: string }>('select count(*) from review_assignments where assessment_id=$1 and status=\'completed\'', [updated.rows[0].assessment_id])
         if (Number(count.rows[0].count) >= 2) await client.query('update assessments set status=\'adjudication\' where id=$1', [updated.rows[0].assessment_id])
