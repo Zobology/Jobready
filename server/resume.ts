@@ -1,5 +1,8 @@
 import mammoth from 'mammoth'
-import pdf from 'pdf-parse'
+// Import the parser implementation directly. The package's top-level CommonJS
+// entry runs bundled sample code when loaded from Node's ESM bridge, which makes
+// production startup depend on a non-existent ./test/data PDF.
+import pdf from 'pdf-parse/lib/pdf-parse.js'
 
 const skillSignals = [
   'Excel', 'SQL', 'Python', 'Statistics', 'Data visualization', 'Power BI', 'Tableau',
