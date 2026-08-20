@@ -10,6 +10,7 @@ export const emptyDatabase: PortalDatabase = {
   submissions: [],
   reviews: [],
   notifications: [],
+  aiGovernance: { mode: 'human_required', model: 'gpt-5.6-terra', minimumReviews: 100, maximumMae: 0.35, minimumExactAgreement: 0.75, reviews: 0, criteria: 0, mae: 0, exactAgreement: 0, eligible: false },
 }
 
 export function createId(prefix: string) {
@@ -122,7 +123,7 @@ export function assignSubmission(database: PortalDatabase, submission: PortalSub
   }))
   return {
     ...database,
-    submissions: [...database.submissions, { ...submission, assignedReviewerIds: [], status: 'awaiting_review' as const }],
+    submissions: [...database.submissions, { ...submission, assignedReviewerIds: [], status: 'awaiting_review' as const, aiReviewStatus: 'unavailable' as const }],
     reviews: [...database.reviews, ...reviews],
     notifications: [...database.notifications, ...notifications],
   }

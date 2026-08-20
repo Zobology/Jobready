@@ -33,6 +33,11 @@ function submission(row: Record<string, unknown>) {
     assignedReviewerIds: row.assigned_reviewer_ids ?? [],
     finalAnswers: row.final_answers ?? undefined,
     adjudicatedAt: row.adjudicated_at ?? undefined,
+    aiReviewStatus: row.ai_review_status ?? 'pending',
+    aiReview: row.ai_review ?? undefined,
+    aiModel: row.ai_model ?? undefined,
+    aiReviewedAt: row.ai_reviewed_at ?? undefined,
+    aiReviewError: row.ai_review_error ?? undefined,
   }
 }
 
@@ -98,26 +103,59 @@ export async function loadPortalState(user: AuthenticatedUser) {
     sentAt: row.sent_at ?? undefined,
   }))
 
+  const activeAiModel = process.env.OPENAI_REVIEW_MODEL ?? 'gpt-5.6-terra'
+  let aiGovernance = { mode: 'human_required', model: activeAiModel, minimumReviews: 100, maximumMae: 0.35, minimumExactAgreement: 0.75, reviews: 0, criteria: 0, mae: 0, exactAgreement: 0, eligible: false }
+  if (user.role === 'admin') {
+    const [ruleResult, statsResult] = await Promise.all([
+      pool.query('select * from ai_governance where singleton=true'),
+      pool.query(`select count(distinct review_assignment_id) reviews,count(*) criteria,avg(absolute_delta) mae,avg(case when exact_match then 1.0 else 0.0 end) exact_agreement from ai_human_calibration where ai_model=$1`, [activeAiModel]),
+    ])
+    const rule = ruleResult.rows[0]
+    const stats = statsResult.rows[0]
+    const reviews = Number(stats?.reviews ?? 0)
+    const mae = Number(stats?.mae ?? 0)
+    const exactAgreement = Number(stats?.exact_agreement ?? 0)
+    aiGovernance = {
+      mode: rule?.mode ?? 'human_required',
+      model: activeAiModel,
+      minimumReviews: Number(rule?.minimum_reviews ?? 100),
+      maximumMae: Number(rule?.maximum_mae ?? 0.35),
+      minimumExactAgreement: Number(rule?.minimum_exact_agreement ?? 0.75),
+      reviews,
+      criteria: Number(stats?.criteria ?? 0),
+      mae,
+      exactAgreement,
+      eligible: reviews >= Number(rule?.minimum_reviews ?? 100) && mae <= Number(rule?.maximum_mae ?? 0.35) && exactAgreement >= Number(rule?.minimum_exact_agreement ?? 0.75),
+    }
+  }
+
   const reviewerStatuses = new Map(reviewRows.map((row) => [String(row.assessment_id), String(row.status)]))
   const submissions = submissionRows.map((row) => {
     const mapped = submission(row)
+    if (user.role === 'candidate') return { ...mapped, aiReview: undefined }
     if (user.role !== 'reviewer') return mapped
     const status = reviewerStatuses.get(String(row.id))
     if (status && ['accepted', 'in_review', 'completed'].includes(status)) return mapped
     const profile = mapped.profile as Record<string, unknown>
-    return { ...mapped, profile: { ...profile, name: 'Candidate' }, questions: [], answers: {} }
+    return { ...mapped, profile: { ...profile, name: 'Candidate' }, questions: [], answers: {}, aiReview: undefined }
+  })
+
+  const reviews = reviewRows.map((row) => {
+    const mapped = review(row)
+    return user.role === 'reviewer' && row.status === 'available' ? { ...mapped, questionReviews: {} } : mapped
   })
 
   return {
     accounts,
     reviewers: reviewerRows.map(reviewer),
     submissions,
-    reviews: reviewRows.map(review),
+    reviews,
     notifications,
+    aiGovernance,
   }
 }
 
-export async function assignBestReviewers(client: PoolClient, assessmentId: string, roleId: string, industryId: string) {
+export async function assignBestReviewers(client: PoolClient, assessmentId: string, roleId: string, industryId: string, rubricScores: Record<string, unknown> = {}) {
   const candidates = await client.query<{ user_id: string; match_score: number }>(
     `select rp.user_id,
       ((case when $1 = any(rp.role_ids) then 2 else 0 end) +
@@ -132,9 +170,9 @@ export async function assignBestReviewers(client: PoolClient, assessmentId: stri
   )
   for (const match of candidates.rows) {
     const assignment = await client.query<{ id: string }>(
-      `insert into review_assignments (assessment_id, reviewer_id, match_score, status)
-       values ($1, $2, $3, 'available') on conflict do nothing returning id`,
-      [assessmentId, match.user_id, match.match_score],
+      `insert into review_assignments (assessment_id, reviewer_id, match_score, status, rubric_scores)
+       values ($1, $2, $3, 'available', $4) on conflict do nothing returning id`,
+      [assessmentId, match.user_id, match.match_score, JSON.stringify(rubricScores)],
     )
     if (assignment.rows[0]) {
       await client.query(

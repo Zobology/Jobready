@@ -1,5 +1,5 @@
 import type { Industry, Question, RoleFamily } from './data'
-import type { AssessmentAnswer, CandidateProfile, HumanReview } from './reviewTypes'
+import type { AssessmentAnswer, CandidateProfile, HumanReview, QuestionReview } from './reviewTypes'
 
 export type AccountRole = 'candidate' | 'reviewer' | 'admin'
 export type ReviewerStatus = 'pending' | 'approved' | 'rejected'
@@ -39,6 +39,11 @@ export interface PortalSubmission {
   assignedReviewerIds: string[]
   finalAnswers?: Record<string, AssessmentAnswer>
   adjudicatedAt?: string
+  aiReviewStatus?: 'pending' | 'processing' | 'completed' | 'failed' | 'unavailable'
+  aiReview?: { rubricScores: Record<string, QuestionReview>; requiresHuman: boolean }
+  aiModel?: string
+  aiReviewedAt?: string
+  aiReviewError?: string
 }
 
 export interface AssignedReview extends HumanReview {
@@ -61,6 +66,20 @@ export interface PortalDatabase {
   submissions: PortalSubmission[]
   reviews: AssignedReview[]
   notifications: NotificationRecord[]
+  aiGovernance: AiGovernance
+}
+
+export interface AiGovernance {
+  mode: 'human_required' | 'ai_only'
+  model: string
+  minimumReviews: number
+  maximumMae: number
+  minimumExactAgreement: number
+  reviews: number
+  criteria: number
+  mae: number
+  exactAgreement: number
+  eligible: boolean
 }
 
 export interface PortalSession {

@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState, type FormEvent } from 'react'
 import {
   ArrowRight,
   Bell,
+  Bot,
   Check,
   CheckCircle2,
   ChevronDown,
@@ -37,7 +38,7 @@ import type { AssignedReview, PortalAccount, PortalDatabase, PortalSubmission, R
 type PublicView = 'landing' | 'signin' | 'signup' | 'reviewer-signup'
 type CandidateView = 'profile' | 'assessment' | 'waiting' | 'results'
 type ReviewerView = 'queue' | 'review' | 'evaluation'
-type AdminView = 'dashboard' | 'reviewers' | 'candidates' | 'assessments' | 'adjudication'
+type AdminView = 'dashboard' | 'reviewers' | 'candidates' | 'assessments' | 'adjudication' | 'ai-calibration'
 
 const initialProfile: CandidateProfile = {
   name: '',
@@ -282,9 +283,9 @@ export default function Portal() {
     }
   }
 
-  async function finalizeReview() {
+  async function finalizeReview(validatedReview?: HumanReview) {
     if (!activeReview || !activeSubmission) return
-    const completedReview = { ...activeReview, status: 'completed' as const, completedAt: new Date().toISOString() }
+    const completedReview: AssignedReview = { ...activeReview, ...(validatedReview ?? {}), status: 'completed', completedAt: new Date().toISOString() }
     if (backendEnabled) {
       try {
         await flushReviewSave()
@@ -398,7 +399,7 @@ export default function Portal() {
     ? [{ id: 'assessment', label: 'Assessment' }, { id: 'results', label: 'Results' }]
     : account.role === 'reviewer'
       ? [{ id: 'queue', label: 'Assessment queue' }]
-      : [{ id: 'dashboard', label: 'Overview' }, { id: 'reviewers', label: 'Mentors' }, { id: 'candidates', label: 'Candidates' }, { id: 'assessments', label: 'Assessments' }, { id: 'adjudication', label: 'Adjudication' }]
+      : [{ id: 'dashboard', label: 'Overview' }, { id: 'reviewers', label: 'Mentors' }, { id: 'candidates', label: 'Candidates' }, { id: 'assessments', label: 'Assessments' }, { id: 'ai-calibration', label: 'AI Calibration' }, { id: 'adjudication', label: 'Adjudication' }]
 
   return (
     <div className="portal-shell">
@@ -514,6 +515,12 @@ export default function Portal() {
                 updateDatabase(result.state)
               } catch (error) { setOperationError((error as Error).message) }
             } : undefined}
+            onAiGovernance={backendEnabled ? async (input) => {
+              try {
+                const result = await api.updateAiGovernance(input)
+                updateDatabase(result.state)
+              } catch (error) { setOperationError((error as Error).message) }
+            } : undefined}
           />
         )}
       </main>
@@ -522,7 +529,7 @@ export default function Portal() {
 }
 
 function emptyPortalDatabase(): PortalDatabase {
-  return { accounts: [], reviewers: [], submissions: [], reviews: [], notifications: [] }
+  return { accounts: [], reviewers: [], submissions: [], reviews: [], notifications: [], aiGovernance: { mode: 'human_required', model: 'gpt-5.6-terra', minimumReviews: 100, maximumMae: 0.35, minimumExactAgreement: 0.75, reviews: 0, criteria: 0, mae: 0, exactAgreement: 0, eligible: false } }
 }
 
 function Brand() {
@@ -734,7 +741,7 @@ function CandidateWaiting({ submission }: { submission: PortalSubmission }) {
   const target = new Date(new Date(submission.submittedAt).getTime() + 24 * 60 * 60 * 1000)
   const completed = submission.status === 'published'
   return (
-    <div className="status-page"><section className="status-card"><div className="status-icon"><CheckCircle2 size={32} /></div><div className="eyebrow"><span /> Assessment submitted</div><h1>Thank you, {submission.profile.name}.</h1><p className="status-lead">Please wait for your result. Our industry experts will complete the evaluation within 24 hours.</p><div className="status-timeline"><div className="done"><i><Check size={13} /></i><span><b>Assessment completed</b><small>{new Date(submission.submittedAt).toLocaleString()}</small></span></div><div className={submission.status !== 'awaiting_review' ? 'active' : ''}><i>2</i><span><b>Expert evaluation</b><small>{submission.assignedReviewerIds.length ? `${submission.assignedReviewerIds.length} mentors assigned` : 'Matching the right mentors'}</small></span></div><div className={completed ? 'done' : ''}><i>{completed ? <Check size={13} /> : 3}</i><span><b>Results published</b><small>Expected by {target.toLocaleString()}</small></span></div></div><div className="submission-reference"><span><small>Submission ID</small><b>{submission.id}</b></span><span><small>Target profile</small><b>{submission.role.name} · {submission.industry.name}</b></span><span><small>Status</small><b>{submission.status.replace('_', ' ')}</b></span></div><div className="human-review-note"><ShieldCheck size={20} /><span><strong>Why human review?</strong>Your subjective, audio, and simulation responses are evaluated as workplace evidence—not marked like objective test answers.</span></div></section></div>
+    <div className="status-page"><section className="status-card"><div className="status-icon"><CheckCircle2 size={32} /></div><div className="eyebrow"><span /> Assessment submitted</div><h1>Thank you, {submission.profile.name}.</h1><p className="status-lead">Please wait for your result. AI prepares the first evaluation, then an industry mentor validates it before any score is published.</p><div className="status-timeline"><div className="done"><i><Check size={13} /></i><span><b>Assessment completed</b><small>{new Date(submission.submittedAt).toLocaleString()}</small></span></div><div className={submission.aiReviewStatus === 'completed' ? 'done' : 'active'}><i>{submission.aiReviewStatus === 'completed' ? <Check size={13} /> : 2}</i><span><b>AI evidence review</b><small>{submission.aiReviewStatus === 'completed' ? 'Draft evaluation prepared' : submission.aiReviewStatus === 'unavailable' ? 'Routed safely to a mentor' : 'Analyzing responses and work samples'}</small></span></div><div className={submission.status === 'under_review' ? 'active' : ''}><i>3</i><span><b>Mentor validation</b><small>{submission.assignedReviewerIds.length ? `${submission.assignedReviewerIds.length} mentor assigned` : 'Starts after the AI draft is ready'}</small></span></div><div className={completed ? 'done' : ''}><i>{completed ? <Check size={13} /> : 4}</i><span><b>Results published</b><small>Expected by {target.toLocaleString()}</small></span></div></div><div className="submission-reference"><span><small>Submission ID</small><b>{submission.id}</b></span><span><small>Target profile</small><b>{submission.role.name} · {submission.industry.name}</b></span><span><small>Status</small><b>{submission.status.replace('_', ' ')}</b></span></div><div className="human-review-note"><ShieldCheck size={20} /><span><strong>Human approval is mandatory during calibration</strong>AI-generated scores remain private until a mentor checks the evidence and finalizes the evaluation.</span></div></section></div>
   )
 }
 
@@ -744,7 +751,7 @@ function ReviewerDashboard({ account, database, onOpen, onEvaluation, onDecision
   const active = reviews.filter((item) => ['accepted', 'in_review'].includes(item.status))
   const completed = reviews.filter((item) => item.status === 'completed')
   return (
-    <div className="workspace-page"><div className="workspace-heading"><div><div className="eyebrow"><span /> Mentor workspace</div><h1>Mentor dashboard</h1><p>Choose matching opportunities and score accepted assessments against the evidence-based rubric.</p></div><div className="workspace-stats"><Stat icon={<ClipboardCheck />} label="Available" value={available.length} /><Stat icon={<Clock3 />} label="In progress" value={active.length} /><Stat icon={<CheckCircle2 />} label="Completed" value={completed.length} /></div></div><div className="review-type-note"><ClipboardCheck size={18} /><span><strong>Assessment reviews</strong><small>Available now</small></span><div /><Sparkles size={18} /><span><strong>Coaching plan reviews</strong><small>Coming soon</small></span></div><div className="queue-table portal-queue"><div className="queue-table-head"><span>Review</span><span>Target profile</span><span>Received</span><span>Progress</span><span>Status</span><span>Action</span></div>{reviews.length === 0 ? <div className="empty-queue"><ClipboardCheck size={28} /><strong>No reviews available right now</strong><span>Matching assessment opportunities will appear here when available.</span></div> : reviews.map((review) => { const submission = database.submissions.find((item) => item.id === review.submissionId); if (!submission) return null; const progress = Object.keys(review.questionReviews).length; const accepted = review.status !== 'available'; const total = accepted ? submission.questions.length : 0; return <div className="queue-row" key={review.id}><div className="candidate-cell"><i>{accepted ? submission.profile.name[0] : 'A'}</i><span><strong>Assessment review</strong><small>{accepted ? submission.profile.name : 'Candidate details unlock after acceptance'}</small></span></div><div><strong>{submission.role.name}</strong><small>{submission.industry.name} · {submission.profile.level}</small></div><div><strong>{new Date(submission.submittedAt).toLocaleDateString()}</strong><small>Complete within 24 hours of acceptance</small></div><div className="queue-progress"><strong>{accepted ? `${progress}/${total}` : '—'}</strong>{accepted && <span><i style={{ width: `${total ? progress / total * 100 : 0}%` }} /></span>}</div><div><span className={`review-status ${review.status}`}>{review.status.replace('_', ' ')}</span></div>{review.status === 'available' ? <div className="review-opportunity-actions"><button className="decline-review" onClick={() => onDecision(review.id, 'decline')}>Decline</button><button className="accept-review" onClick={() => onDecision(review.id, 'accept')}>Accept</button></div> : review.status === 'completed' ? <button className="review-action evaluation-action" onClick={() => onEvaluation(review.id)}>Evaluation Result <ArrowRight size={14} /></button> : <button className="review-action" onClick={() => onOpen(review.id)}>{progress ? 'Continue' : 'Start'} <ArrowRight size={14} /></button>}</div> })}</div></div>
+    <div className="workspace-page"><div className="workspace-heading"><div><div className="eyebrow"><span /> Mentor workspace</div><h1>Mentor dashboard</h1><p>Validate AI-drafted assessments against the candidate evidence and job-specific rubric.</p></div><div className="workspace-stats"><Stat icon={<ClipboardCheck />} label="Available" value={available.length} /><Stat icon={<Clock3 />} label="In progress" value={active.length} /><Stat icon={<CheckCircle2 />} label="Completed" value={completed.length} /></div></div><div className="review-type-note"><ClipboardCheck size={18} /><span><strong>AI-assisted assessment reviews</strong><small>Mentor validation required</small></span><div /><Sparkles size={18} /><span><strong>Coaching plan reviews</strong><small>Coming soon</small></span></div><div className="queue-table portal-queue"><div className="queue-table-head"><span>Review</span><span>Target profile</span><span>Received</span><span>Progress</span><span>Status</span><span>Action</span></div>{reviews.length === 0 ? <div className="empty-queue"><ClipboardCheck size={28} /><strong>No reviews available right now</strong><span>AI-drafted matching opportunities will appear here when ready.</span></div> : reviews.map((review) => { const submission = database.submissions.find((item) => item.id === review.submissionId); if (!submission) return null; const progress = Object.values(review.questionReviews).filter((item) => item.validated).length; const accepted = review.status !== 'available'; const total = accepted ? submission.questions.length : 0; return <div className="queue-row" key={review.id}><div className="candidate-cell"><i>{accepted ? submission.profile.name[0] : 'A'}</i><span><strong>AI-assisted review</strong><small>{accepted ? submission.profile.name : 'Candidate details unlock after acceptance'}</small></span></div><div><strong>{submission.role.name}</strong><small>{submission.industry.name} · {submission.profile.level}</small></div><div><strong>{new Date(submission.submittedAt).toLocaleDateString()}</strong><small>Complete within 24 hours of acceptance</small></div><div className="queue-progress"><strong>{accepted ? `${progress}/${total}` : '—'}</strong>{accepted && <span><i style={{ width: `${total ? progress / total * 100 : 0}%` }} /></span>}</div><div><span className={`review-status ${review.status}`}>{review.status.replace('_', ' ')}</span></div>{review.status === 'available' ? <div className="review-opportunity-actions"><button className="decline-review" onClick={() => onDecision(review.id, 'decline')}>Decline</button><button className="accept-review" onClick={() => onDecision(review.id, 'accept')}>Accept</button></div> : review.status === 'completed' ? <button className="review-action evaluation-action" onClick={() => onEvaluation(review.id)}>Evaluation Result <ArrowRight size={14} /></button> : <button className="review-action" onClick={() => onOpen(review.id)}>{progress ? 'Continue' : 'Start'} <ArrowRight size={14} /></button>}</div> })}</div></div>
   )
 }
 
@@ -752,7 +759,7 @@ function Stat({ icon, label, value }: { icon: React.ReactNode; label: string; va
   return <div className="workspace-stat"><span>{icon}</span><div><small>{label}</small><strong>{value}</strong></div></div>
 }
 
-function AdminPanel({ view, database, onView, onUpdate, onReviewerDecision, onPublish }: { view: AdminView; database: PortalDatabase; onView: (view: AdminView) => void; onUpdate: (database: PortalDatabase) => void; onReviewerDecision?: (userId: string, status: 'approved' | 'rejected') => Promise<void>; onPublish?: (submissionId: string, choice: string) => Promise<void> }) {
+function AdminPanel({ view, database, onView, onUpdate, onReviewerDecision, onPublish, onAiGovernance }: { view: AdminView; database: PortalDatabase; onView: (view: AdminView) => void; onUpdate: (database: PortalDatabase) => void; onReviewerDecision?: (userId: string, status: 'approved' | 'rejected') => Promise<void>; onPublish?: (submissionId: string, choice: string) => Promise<void>; onAiGovernance?: (input: { mode?: 'human_required' | 'ai_only'; minimumReviews?: number; maximumMae?: number; minimumExactAgreement?: number }) => Promise<void> }) {
   const pendingReviewers = database.reviewers.filter((item) => item.status === 'pending')
   const candidates = database.accounts.filter((item) => item.role === 'candidate')
   const pendingAssessments = database.submissions.filter((item) => ['awaiting_review', 'under_review'].includes(item.status))
@@ -763,6 +770,7 @@ function AdminPanel({ view, database, onView, onUpdate, onReviewerDecision, onPu
     candidates: { title: 'Candidate registrations', description: 'Track every registered candidate and whether their assessment is pending or completed.' },
     assessments: { title: 'Assessments with mentors', description: 'Monitor matching, acceptance, and scoring progress for submitted assessments.' },
     adjudication: { title: 'Score adjudication', description: 'Resolve independently completed mentor reviews and publish the final result.' },
+    'ai-calibration': { title: 'AI calibration governance', description: 'Measure AI–mentor agreement and control when automated publication becomes eligible.' },
   }
 
   function approveReviewer(userId: string, status: 'approved' | 'rejected') {
@@ -800,10 +808,11 @@ function AdminPanel({ view, database, onView, onUpdate, onReviewerDecision, onPu
 
   return (
     <div className="admin-page"><div className="workspace-heading"><div><div className="eyebrow"><span /> Admin control centre</div><h1>{headings[view].title}</h1><p>{headings[view].description}</p></div></div>
-      {view === 'dashboard' && <><div className="admin-metrics"><Metric label="Registered mentors" value={database.reviewers.length} icon={<UserCheck />} /><Metric label="Registered candidates" value={candidates.length} icon={<Users />} /><Metric label="Pending mentor approvals" value={pendingReviewers.length} icon={<Clock3 />} alert={pendingReviewers.length > 0} /><Metric label="With mentors" value={pendingAssessments.length} icon={<ClipboardCheck />} alert={pendingAssessments.length > 0} /></div><div className="admin-actions"><button onClick={() => onView('reviewers')}><UserCheck /><span><b>Mentor registrations</b><small>{pendingReviewers.length} awaiting an approval decision</small></span><ArrowRight /></button><button onClick={() => onView('candidates')}><Users /><span><b>Candidate registrations</b><small>{candidates.length} candidates · assessment status tracking</small></span><ArrowRight /></button><button onClick={() => onView('assessments')}><ClipboardCheck /><span><b>Assessments with mentors</b><small>{pendingAssessments.length} currently awaiting or under review</small></span><ArrowRight /></button><button onClick={() => onView('adjudication')}><ScaleIcon /><span><b>Resolve dual reviews</b><small>{adjudications.length} assessments need a final decision</small></span><ArrowRight /></button></div></>}
+      {view === 'dashboard' && <><div className="admin-metrics"><Metric label="Registered mentors" value={database.reviewers.length} icon={<UserCheck />} /><Metric label="Registered candidates" value={candidates.length} icon={<Users />} /><Metric label="Pending mentor approvals" value={pendingReviewers.length} icon={<Clock3 />} alert={pendingReviewers.length > 0} /><Metric label="With mentors" value={pendingAssessments.length} icon={<ClipboardCheck />} alert={pendingAssessments.length > 0} /></div><div className="admin-actions"><button onClick={() => onView('reviewers')}><UserCheck /><span><b>Mentor registrations</b><small>{pendingReviewers.length} awaiting an approval decision</small></span><ArrowRight /></button><button onClick={() => onView('candidates')}><Users /><span><b>Candidate registrations</b><small>{candidates.length} candidates · assessment status tracking</small></span><ArrowRight /></button><button onClick={() => onView('assessments')}><ClipboardCheck /><span><b>Assessments with mentors</b><small>{pendingAssessments.length} currently awaiting or under review</small></span><ArrowRight /></button><button onClick={() => onView('ai-calibration')}><Bot /><span><b>AI calibration</b><small>{database.aiGovernance.reviews}/{database.aiGovernance.minimumReviews} mentor-validated reviews · {Math.round(database.aiGovernance.exactAgreement * 100)}% exact agreement</small></span><ArrowRight /></button><button onClick={() => onView('adjudication')}><ScaleIcon /><span><b>Resolve dual reviews</b><small>{adjudications.length} assessments need a final decision</small></span><ArrowRight /></button></div></>}
       {view === 'reviewers' && <ReviewerApprovals database={database} onDecision={approveReviewer} />}
       {view === 'candidates' && <CandidateRegistrations database={database} />}
       {view === 'assessments' && <PendingAssessments database={database} />}
+      {view === 'ai-calibration' && <AiCalibrationPanel database={database} onUpdate={onAiGovernance} />}
       {view === 'adjudication' && <AdjudicationQueue database={database} onPublish={publish} />}
     </div>
   )
@@ -811,6 +820,22 @@ function AdminPanel({ view, database, onView, onUpdate, onReviewerDecision, onPu
 
 function Metric({ label, value, icon, alert }: { label: string; value: number; icon: React.ReactNode; alert?: boolean }) {
   return <article className={alert ? 'metric-card alert' : 'metric-card'}><span>{icon}</span><div><strong>{value}</strong><small>{label}</small></div></article>
+}
+
+function AiCalibrationPanel({ database, onUpdate }: { database: PortalDatabase; onUpdate?: (input: { mode?: 'human_required' | 'ai_only'; minimumReviews?: number; maximumMae?: number; minimumExactAgreement?: number }) => Promise<void> }) {
+  const governance = database.aiGovernance
+  const [minimumReviews, setMinimumReviews] = useState(governance.minimumReviews)
+  const [maximumMae, setMaximumMae] = useState(governance.maximumMae)
+  const [minimumAgreement, setMinimumAgreement] = useState(Math.round(governance.minimumExactAgreement * 100))
+  const [saving, setSaving] = useState(false)
+
+  async function update(input: Parameters<NonNullable<typeof onUpdate>>[0]) {
+    if (!onUpdate) return
+    setSaving(true)
+    try { await onUpdate(input) } finally { setSaving(false) }
+  }
+
+  return <div className="ai-governance-page"><div className={`ai-mode-card ${governance.mode}`}><Bot size={28} /><div><small>Current publication mode</small><h2>{governance.mode === 'human_required' ? 'AI draft + mandatory mentor validation' : 'AI-only publication enabled'}</h2><p>{governance.mode === 'human_required' ? 'No candidate score is published until a mentor validates every AI recommendation.' : 'Eligible, high-confidence assessments may publish automatically. Low-confidence evidence still routes to mentors.'}</p></div><span>{governance.mode.replace('_', ' ')}</span></div><div className="calibration-metrics"><article><small>Validated reviews</small><b>{governance.reviews}</b><span>Target {governance.minimumReviews}</span></article><article><small>Criterion comparisons</small><b>{governance.criteria}</b><span>AI vs mentor</span></article><article><small>Mean absolute difference</small><b>{governance.mae.toFixed(2)}</b><span>Target ≤ {governance.maximumMae.toFixed(2)}</span></article><article><small>Exact score agreement</small><b>{Math.round(governance.exactAgreement * 100)}%</b><span>Target ≥ {Math.round(governance.minimumExactAgreement * 100)}%</span></article></div><section className="calibration-controls"><div><h3>Calibration gate (“X”)</h3><p>Threshold changes are audited. AI-only mode remains locked until all three conditions pass.</p></div><label><span>Minimum mentor reviews</span><input type="number" min="20" max="10000" value={minimumReviews} onChange={(event) => setMinimumReviews(Number(event.target.value))} /></label><label><span>Maximum mean difference</span><input type="number" min="0" max="3" step="0.05" value={maximumMae} onChange={(event) => setMaximumMae(Number(event.target.value))} /></label><label><span>Minimum exact agreement (%)</span><input type="number" min="0" max="100" value={minimumAgreement} onChange={(event) => setMinimumAgreement(Number(event.target.value))} /></label><button className="secondary-button" disabled={saving} onClick={() => void update({ minimumReviews, maximumMae, minimumExactAgreement: minimumAgreement / 100 })}>Save thresholds</button></section><div className={`calibration-decision ${governance.eligible ? 'eligible' : ''}`}><ShieldCheck size={20} /><span><b>{governance.eligible ? 'Calibration gate passed' : 'Human validation remains mandatory'}</b><small>{governance.eligible ? 'An admin may now enable AI-only publication. This action is reversible.' : 'More mentor-reviewed evidence or stronger agreement is required before AI-only mode can be enabled.'}</small></span>{governance.mode === 'human_required' ? <button disabled={!governance.eligible || saving} onClick={() => void update({ mode: 'ai_only' })}>Enable AI-only</button> : <button onClick={() => void update({ mode: 'human_required' })}>Require mentors again</button>}</div></div>
 }
 
 function ScaleIcon() { return <span className="scale-icon">⚖</span> }

@@ -414,7 +414,7 @@ export function ProfileBuilder({
         <button className="primary-button" disabled={!isValid || isPreparing} onClick={() => void onContinue()}>
           {isPreparing ? 'Analyzing your profile…' : 'Build my assessment'} {!isPreparing && <ArrowRight size={18} />}
         </button>
-        <p className="privacy-copy">Your information is private and used only to personalize your assessment.</p>
+        <p className="privacy-copy">Your responses and uploaded evidence are securely processed for an AI draft evaluation and mentor validation. Scores remain private until the required review is complete.</p>
       </section>
     </div>
   )

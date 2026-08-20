@@ -15,6 +15,7 @@
     "lint": "eslint .",
     "migrate": "node server-dist/server/migrate.js",
     "notifications": "node server-dist/server/jobs/sendNotifications.js",
+    "ai-reviews": "node server-dist/server/jobs/processAiReviews.js",
     "publish-single-review": "node server-dist/server/publishSingleReview.js",
     "preview": "vite preview --host 0.0.0.0",
     "start": "npm run migrate && node server-dist/server/index.js"

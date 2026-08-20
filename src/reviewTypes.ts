@@ -28,11 +28,15 @@ export type RubricScore = 1 | 2 | 3 | 4
 
 export interface CriterionReview {
   score: RubricScore
+  aiScore?: RubricScore
+  rationale?: string
+  confidence?: number
 }
 
 export interface QuestionReview {
   criteria: Record<string, CriterionReview>
   comment: string
+  validated?: boolean
 }
 
 export interface HumanReview {

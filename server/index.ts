@@ -10,10 +10,11 @@ import { z } from 'zod'
 import { authenticate, createSession, destroySession, requireRole, requireUser } from './auth.js'
 import type { AuthenticatedUser } from './auth.js'
 import { pool, transaction } from './db.js'
-import { assignBestReviewers, loadPortalState } from './state.js'
+import { loadPortalState } from './state.js'
 import { readFile, storageConfigured, uploadFile } from './storage.js'
 import { extractResumeSignals } from './resume.js'
 import { buildSampleWorkbook, type DataVariant } from './sampleData.js'
+import { calibrationSummary, processAssessmentAiReview, processPendingAiReviews, recordHumanCalibration, type RubricScores } from './aiReview.js'
 
 const app = express()
 const port = Number(process.env.PORT ?? 10000)
@@ -250,9 +251,6 @@ app.post('/api/candidate/assessments', requireRole('candidate'), async (request,
         [request.user!.id, JSON.stringify(input.profile), JSON.stringify(input.role), JSON.stringify(input.industry), JSON.stringify(input.questions), JSON.stringify(input.answers)],
       )
       const assessmentId = inserted.rows[0].id
-      const roleId = String(input.role.id ?? '')
-      const industryId = String(input.industry.id ?? '')
-      await assignBestReviewers(client, assessmentId, roleId, industryId)
       const storageKeys = [...JSON.stringify(input.answers).matchAll(/\/api\/files\/([^"\\]+)/g)].map((match) => decodeURIComponent(match[1]))
       if (input.profile.resumeKey) storageKeys.push(input.profile.resumeKey)
       if (storageKeys.length) await client.query('update stored_files set assessment_id = $1 where owner_id = $2 and object_key = any($3)', [assessmentId, request.user!.id, storageKeys])
@@ -264,6 +262,7 @@ app.post('/api/candidate/assessments', requireRole('candidate'), async (request,
       await client.query(`insert into audit_log (actor_id, action, entity_type, entity_id) values ($1,'assessment_submitted','assessment',$2)`, [request.user!.id, assessmentId])
       return assessmentId
     })
+    void processAssessmentAiReview(result).catch((error) => console.error('AI assessment review failed:', error))
     response.status(201).json({ id: result, state: await loadPortalState(request.user!), user: publicUser(request.user!) })
   } catch (error) {
     if ((error as { code?: string }).code === '23505') return response.status(409).json({ error: 'You already have an assessment awaiting completion' })
@@ -277,8 +276,8 @@ app.post('/api/reviewer/reviews/:id/decision', requireRole('reviewer'), async (r
   try {
     const decision = z.enum(['accept', 'decline']).parse(request.body.decision)
     await transaction(async (client) => {
-      const assignment = (await client.query<{ id: string; assessment_id: string; status: string }>(
-        `select ra.id, ra.assessment_id, ra.status
+      const assignment = (await client.query<{ id: string; assessment_id: string; status: string; ai_review_status: string }>(
+        `select ra.id, ra.assessment_id, ra.status, a.ai_review_status
          from review_assignments ra
          join assessments a on a.id = ra.assessment_id
          where ra.id = $1 and ra.reviewer_id = $2
@@ -287,6 +286,7 @@ app.post('/api/reviewer/reviews/:id/decision', requireRole('reviewer'), async (r
       )).rows[0]
       if (!assignment) throw Object.assign(new Error('Review opportunity not found'), { status: 404 })
       if (assignment.status !== 'available') throw Object.assign(new Error('This review opportunity is no longer available'), { status: 409 })
+      if (!['completed', 'unavailable'].includes(assignment.ai_review_status)) throw Object.assign(new Error('The AI draft is still being prepared'), { status: 409 })
 
       if (decision === 'decline') {
         await client.query(`update review_assignments set status = 'declined' where id = $1`, [assignment.id])
@@ -336,6 +336,21 @@ app.put('/api/reviewer/reviews/:id', requireRole('reviewer'), async (request, re
   try {
     const input = reviewSchema.parse(request.body)
     await transaction(async (client) => {
+      if (input.status === 'completed') {
+        const assessment = await client.query<{ questions: Array<{ id: string; rubric: string[] }>; ai_review_status: string }>(
+          `select a.questions,a.ai_review_status from assessments a join review_assignments ra on ra.assessment_id=a.id
+           where ra.id=$1 and ra.reviewer_id=$2`,
+          [request.params.id, request.user!.id],
+        )
+        const row = assessment.rows[0]
+        if (!row || !['completed', 'unavailable'].includes(row.ai_review_status)) throw Object.assign(new Error('AI evaluation is not ready for mentor validation'), { status: 409 })
+        const reviews = input.questionReviews as Record<string, { validated?: boolean; criteria?: Record<string, { score?: number }> }>
+        const complete = row.questions.every((question) => reviews[question.id]?.validated && question.rubric.every((criterion) => {
+          const score = reviews[question.id]?.criteria?.[criterion]?.score
+          return Number.isInteger(score) && Number(score) >= 1 && Number(score) <= 4
+        }))
+        if (!complete) throw Object.assign(new Error('Validate every AI recommendation and rubric criterion before finalizing'), { status: 400 })
+      }
       const updated = await client.query<{ assessment_id: string; rubric_scores: Record<string, { criteria?: Record<string, { score?: number }>; comment?: string }> }>(
         `update review_assignments set rubric_scores=$1, status=$2,
           started_at=coalesce(started_at, now()), completed_at=case when $2='completed' then now() else completed_at end
@@ -352,6 +367,7 @@ app.put('/api/reviewer/reviews/:id', requireRole('reviewer'), async (request, re
         throw Object.assign(new Error('Review not found'), { status: 404 })
       }
       if (input.status === 'completed') {
+        await recordHumanCalibration(client, updated.rows[0].assessment_id, String(request.params.id), updated.rows[0].rubric_scores as RubricScores)
         const counts = await client.query<{ active: string; completed: string }>(
           `select
              count(*) filter (where status in ('accepted','in_review','completed')) active,
@@ -398,6 +414,32 @@ app.put('/api/reviewer/reviews/:id', requireRole('reviewer'), async (request, re
   } catch (error) { next(error) }
 })
 
+app.patch('/api/admin/ai-governance', requireRole('admin'), async (request, response, next) => {
+  try {
+    const input = z.object({
+      mode: z.enum(['human_required', 'ai_only']).optional(),
+      minimumReviews: z.number().int().min(20).max(10000).optional(),
+      maximumMae: z.number().min(0).max(3).optional(),
+      minimumExactAgreement: z.number().min(0).max(1).optional(),
+    }).refine((value) => Object.keys(value).length > 0).parse(request.body)
+    await transaction(async (client) => {
+      const summary = await calibrationSummary(client)
+      const eligible = summary.reviews >= (input.minimumReviews ?? summary.minimumReviews)
+        && summary.mae <= (input.maximumMae ?? summary.maximumMae)
+        && summary.exactAgreement >= (input.minimumExactAgreement ?? summary.minimumExactAgreement)
+      if (input.mode === 'ai_only' && !eligible) {
+        throw Object.assign(new Error('AI-only mode cannot be enabled until the calibration thresholds are met'), { status: 409 })
+      }
+      await client.query(
+        `update ai_governance set mode=coalesce($1,mode),minimum_reviews=coalesce($2,minimum_reviews),maximum_mae=coalesce($3,maximum_mae),minimum_exact_agreement=coalesce($4,minimum_exact_agreement),updated_at=now(),updated_by=$5 where singleton=true`,
+        [input.mode ?? null, input.minimumReviews ?? null, input.maximumMae ?? null, input.minimumExactAgreement ?? null, request.user!.id],
+      )
+      await client.query(`insert into audit_log(actor_id,action,entity_type,entity_id,metadata) values($1,'ai_governance_updated','ai_governance','singleton',$2)`, [request.user!.id, JSON.stringify(input)])
+    })
+    response.json({ state: await loadPortalState(request.user!), user: publicUser(request.user!) })
+  } catch (error) { next(error) }
+})
+
 app.patch('/api/admin/reviewers/:id', requireRole('admin'), async (request, response, next) => {
   try {
     const status = z.enum(['approved', 'rejected']).parse(request.body.status)
@@ -415,11 +457,12 @@ app.patch('/api/admin/reviewers/:id', requireRole('admin'), async (request, resp
           [request.params.id],
         )
         const profile = (await client.query<{ role_ids: string[]; industry_ids: string[] }>('select role_ids, industry_ids from reviewer_profiles where user_id=$1', [request.params.id])).rows[0]
-        const openAssessments = await client.query<{ id: string; role_id: string; industry_id: string; match_score: number }>(
-          `select a.id, a.role_snapshot->>'id' role_id, a.industry_snapshot->>'id' industry_id,
+        const openAssessments = await client.query<{ id: string; role_id: string; industry_id: string; match_score: number; rubric_scores: Record<string, unknown> }>(
+          `select a.id, a.role_snapshot->>'id' role_id, a.industry_snapshot->>'id' industry_id,coalesce(a.ai_review->'rubricScores','{}'::jsonb) rubric_scores,
             ((case when a.role_snapshot->>'id'=any($2) then 2 else 0 end) + (case when a.industry_snapshot->>'id'=any($3) then 1 else 0 end))::int match_score
            from assessments a
            where a.status in ('awaiting_review','under_review')
+             and a.ai_review_status in ('completed','unavailable')
              and (a.role_snapshot->>'id'=any($2) or a.industry_snapshot->>'id'=any($3))
              and (select count(*) from review_assignments where assessment_id=a.id and status in ('accepted','in_review','completed')) < 2
              and not exists(select 1 from review_assignments where assessment_id=a.id and reviewer_id=$1)
@@ -428,9 +471,9 @@ app.patch('/api/admin/reviewers/:id', requireRole('admin'), async (request, resp
         )
         for (const assessment of openAssessments.rows) {
           const assignment = await client.query<{ id: string }>(
-            `insert into review_assignments(assessment_id,reviewer_id,match_score,status)
-             values($1,$2,$3,'available') returning id`,
-            [assessment.id, request.params.id, assessment.match_score],
+            `insert into review_assignments(assessment_id,reviewer_id,match_score,status,rubric_scores)
+             values($1,$2,$3,'available',$4) returning id`,
+            [assessment.id, request.params.id, assessment.match_score, JSON.stringify(assessment.rubric_scores)],
           )
           await client.query(
             `insert into notification_outbox(recipient_id,event_type,payload) values($1,'review_assigned',jsonb_build_object('assessment_id',$2::uuid,'assignment_id',$3::uuid,'subject','New Assessment Ready for Your Review'))`,
@@ -498,4 +541,13 @@ app.use((error: unknown, _request: express.Request, response: express.Response, 
 })
 
 const server = app.listen(port, '0.0.0.0', () => console.log(`Zobology listening on ${port}`))
-process.on('SIGTERM', () => server.close(() => pool.end().finally(() => process.exit(0))))
+const aiReviewPollMs = Math.max(30_000, Number(process.env.AI_REVIEW_POLL_MS ?? 60_000))
+const aiReviewTimer = setInterval(() => {
+  void processPendingAiReviews(Math.max(1, Math.min(10, Number(process.env.AI_REVIEW_BATCH_SIZE ?? 3))))
+    .catch((error) => console.error('AI review worker failed:', error))
+}, aiReviewPollMs)
+aiReviewTimer.unref()
+process.on('SIGTERM', () => {
+  clearInterval(aiReviewTimer)
+  server.close(() => pool.end().finally(() => process.exit(0)))
+})

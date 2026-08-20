@@ -9,6 +9,7 @@ import {
   FileSpreadsheet,
   Inbox,
   Mic,
+  Bot,
   ShieldCheck,
   UserCheck,
 } from 'lucide-react'
@@ -143,18 +144,18 @@ export function ReviewWorkspace({
   onSelect: (index: number) => void
   onChange: (review: HumanReview) => void
   onExit: () => void
-  onFinalize: () => void
+  onFinalize: (review: HumanReview) => void
 }) {
   const question = questions[currentIndex]
   const answer = answers[question.id]
   const questionReview = review.questionReviews[question.id] ?? { criteria: {}, comment: '' }
   const reviewedCount = questions.filter((item) => {
     const itemReview = review.questionReviews[item.id]
-    return itemReview && item.rubric.every((criterion) => itemReview.criteria[criterion]?.score)
+    return itemReview?.validated && item.rubric.every((criterion) => itemReview.criteria[criterion]?.score)
   }).length
   const currentComplete = question.rubric.every((criterion) => questionReview.criteria[criterion]?.score)
-  const allComplete = reviewedCount === questions.length
   const readOnly = review.status === 'completed'
+  const hasAiDraft = Object.values(questionReview.criteria).some((criterion) => criterion.aiScore)
 
   function updateCriterion(criterion: string, score: RubricScore) {
     if (readOnly) return
@@ -166,7 +167,8 @@ export function ReviewWorkspace({
         ...review.questionReviews,
         [question.id]: {
           ...questionReview,
-          criteria: { ...questionReview.criteria, [criterion]: { score } },
+          validated: false,
+          criteria: { ...questionReview.criteria, [criterion]: { ...questionReview.criteria[criterion], score } },
         },
       },
     })
@@ -178,8 +180,19 @@ export function ReviewWorkspace({
       ...review,
       status: 'in_review',
       startedAt: review.startedAt ?? new Date().toISOString(),
-      questionReviews: { ...review.questionReviews, [question.id]: { ...questionReview, comment } },
+      questionReviews: { ...review.questionReviews, [question.id]: { ...questionReview, comment, validated: false } },
     })
+  }
+
+  function validatedReview() {
+    return {
+      ...review,
+      status: 'in_review' as const,
+      questionReviews: {
+        ...review.questionReviews,
+        [question.id]: { ...questionReview, validated: true },
+      },
+    }
   }
 
   return (
@@ -191,7 +204,7 @@ export function ReviewWorkspace({
         <div className="review-question-list">
           {questions.map((item, index) => {
             const itemReview = review.questionReviews[item.id]
-            const complete = itemReview && item.rubric.every((criterion) => itemReview.criteria[criterion]?.score)
+            const complete = itemReview?.validated && item.rubric.every((criterion) => itemReview.criteria[criterion]?.score)
             return <button key={item.id} className={index === currentIndex ? 'active' : ''} onClick={() => onSelect(index)}><i>{complete ? <Check size={12} /> : index + 1}</i><span><strong>{item.competency}</strong><small>{item.dimension.replace('_', ' ')}</small></span></button>
           })}
         </div>
@@ -199,6 +212,7 @@ export function ReviewWorkspace({
 
       <section className="review-stage">
         <div className="review-topline"><span>Question {currentIndex + 1} of {questions.length}</span><span className={`review-status ${review.status}`}>{review.status.replace('_', ' ')}</span></div>
+        {hasAiDraft && <div className="ai-review-banner"><Bot size={19} /><span><strong>AI draft—mentor validation required</strong><small>Review the evidence, confirm or change every suggested score, and edit the feedback before finalizing.</small></span></div>}
         <article className="review-evidence-card">
           <div className="evidence-label"><FileText size={15} /> Candidate evidence · {question.bankId}</div>
           <h1>{question.prompt}</h1>
@@ -217,7 +231,8 @@ export function ReviewWorkspace({
           <div className="criterion-list">
             {question.rubric.map((criterion) => (
               <div className="criterion-row" key={criterion}>
-                <strong>{criterion}</strong>
+                <strong>{criterion}{questionReview.criteria[criterion]?.aiScore && <small>AI suggested {questionReview.criteria[criterion].aiScore}/4 · {Math.round((questionReview.criteria[criterion].confidence ?? 0) * 100)}% confidence</small>}</strong>
+                {questionReview.criteria[criterion]?.rationale && <p className="ai-rationale">{questionReview.criteria[criterion].rationale}</p>}
                 <div>{scoreLevels.map((level) => <button key={level.score} disabled={readOnly} title={level.short} className={questionReview.criteria[criterion]?.score === level.score ? 'selected' : ''} onClick={() => updateCriterion(criterion, level.score)}><i>{level.score}</i><span>{level.label}</span></button>)}</div>
               </div>
             ))}
@@ -231,8 +246,8 @@ export function ReviewWorkspace({
           {readOnly
             ? <button className="primary-button compact" onClick={onExit}><CheckCircle2 size={16} /> Review complete</button>
             : currentIndex < questions.length - 1
-            ? <button className="primary-button compact" disabled={!currentComplete} onClick={() => onSelect(currentIndex + 1)}>Save & next <ArrowRight size={16} /></button>
-            : <button className="primary-button compact" disabled={!allComplete} onClick={onFinalize}><CheckCircle2 size={16} /> Finalize review</button>}
+            ? <button className="primary-button compact" disabled={!currentComplete} onClick={() => { onChange(validatedReview()); onSelect(currentIndex + 1) }}>Confirm & next <ArrowRight size={16} /></button>
+            : <button className="primary-button compact" disabled={!currentComplete || reviewedCount < questions.length - 1} onClick={() => onFinalize(validatedReview())}><CheckCircle2 size={16} /> Validate and finalize</button>}
         </div>
       </section>
     </div>

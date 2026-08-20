@@ -58,4 +58,7 @@ export const api = {
   publish(assessmentId: string, choice: string) {
     return request<StateResponse>(`/admin/assessments/${assessmentId}/publish`, { method: 'POST', body: JSON.stringify({ choice }) })
   },
+  updateAiGovernance(input: { mode?: 'human_required' | 'ai_only'; minimumReviews?: number; maximumMae?: number; minimumExactAgreement?: number }) {
+    return request<StateResponse>('/admin/ai-governance', { method: 'PATCH', body: JSON.stringify(input) })
+  },
 }
