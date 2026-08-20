@@ -85,10 +85,11 @@ function accountName(database: PortalDatabase, userId: string) {
 
 export default function Portal() {
   const [requestedReviewId] = useState(() => new URLSearchParams(window.location.search).get('review'))
+  const [requestedAssessment] = useState(() => window.location.pathname.replace(/\/+$/, '') === '/assessment')
   const [database, setDatabase] = useState<PortalDatabase>(() => loadDatabase())
   const [ready, setReady] = useState(false)
   const [sessionId, setSessionId] = useState<string | null>(() => loadSession())
-  const [publicView, setPublicView] = useState<PublicView>(requestedReviewId ? 'signin' : 'landing')
+  const [publicView, setPublicView] = useState<PublicView>(requestedReviewId || requestedAssessment ? 'signin' : 'landing')
   const [candidateView, setCandidateView] = useState<CandidateView>('profile')
   const [reviewerView, setReviewerView] = useState<ReviewerView>(requestedReviewId ? 'review' : 'queue')
   const [adminView, setAdminView] = useState<AdminView>('dashboard')
