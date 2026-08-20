@@ -188,6 +188,48 @@ button { color: inherit; }
 .admin-actions b { font-size: 12px; }
 .admin-actions small { margin-top: 4px; color: var(--muted); font-size: 9px; }
 .admin-actions button > svg:last-child { width: 16px; color: #7b8d88; }
+.admin-rule-note { display: flex; align-items: center; gap: 11px; margin-top: 28px; padding: 14px 17px; color: #49675f; background: var(--mint); border: 1px solid #d7e8e1; border-radius: 12px; }
+.admin-rule-note > svg { flex: 0 0 auto; color: var(--green); }
+.admin-rule-note b, .admin-rule-note small { display: block; }
+.admin-rule-note b { font-size: 10px; }
+.admin-rule-note small { margin-top: 3px; color: var(--muted); font-size: 9px; }
+.admin-data-table { margin-top: 35px; overflow: hidden; background: white; border: 1px solid #dfe7e4; border-radius: 15px; }
+.admin-data-head, .admin-data-row { display: grid; grid-template-columns: 1.35fr .7fr 1.15fr 1fr; align-items: center; gap: 20px; padding: 0 20px; }
+.admin-data-head { min-height: 43px; color: #879691; background: #f5f8f6; border-bottom: 1px solid #e3eae7; font-size: 8px; font-weight: 800; letter-spacing: .6px; text-transform: uppercase; }
+.admin-data-row { min-height: 82px; padding-top: 14px; padding-bottom: 14px; border-bottom: 1px solid #e9eeec; }
+.admin-data-row:last-child { border-bottom: 0; }
+.admin-data-row > div > b, .admin-data-row > div > small { display: block; }
+.admin-data-row > div > b { font-size: 10px; }
+.admin-data-row > div > small { margin-top: 4px; color: var(--muted); font-size: 8px; }
+.admin-person { display: flex; align-items: center; gap: 10px; min-width: 0; }
+.admin-person > i { width: 35px; height: 35px; display: grid; place-items: center; flex: 0 0 35px; color: white; background: var(--green); border-radius: 10px; font-style: normal; font-size: 11px; font-weight: 800; }
+.admin-person span { min-width: 0; }
+.admin-person b, .admin-person small { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.admin-person b { font-size: 11px; }
+.admin-person small { margin-top: 3px; color: var(--muted); font-size: 8px; }
+.admin-status { display: inline-flex; padding: 6px 9px; border-radius: 99px; font-style: normal; font-size: 8px; font-weight: 800; text-transform: uppercase; letter-spacing: .35px; }
+.admin-status.pending { color: #98602c; background: #fff1e3; }
+.admin-status.active { color: #326e8e; background: #e8f3f8; }
+.admin-status.decision { color: #7559a2; background: #f0eafa; }
+.admin-status.done { color: var(--green); background: var(--mint); }
+.assessment-monitor-list { display: grid; gap: 15px; margin-top: 35px; }
+.assessment-monitor-card { padding: 22px; background: white; border: 1px solid #dfe7e4; border-radius: 15px; }
+.assessment-monitor-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 20px; }
+.assessment-monitor-head small { color: #879691; font-size: 8px; }
+.assessment-monitor-head h3 { margin: 5px 0 3px; font: 700 17px 'Manrope', sans-serif; }
+.assessment-monitor-head p { margin: 0; color: var(--muted); font-size: 9px; }
+.assessment-monitor-metrics { display: grid; grid-template-columns: 1.5fr repeat(3, 1fr); gap: 1px; margin-top: 18px; overflow: hidden; background: #e2e9e6; border: 1px solid #e2e9e6; border-radius: 10px; }
+.assessment-monitor-metrics > span { padding: 11px 12px; background: #f7f9f8; }
+.assessment-monitor-metrics small, .assessment-monitor-metrics b { display: block; }
+.assessment-monitor-metrics small { color: #899792; font-size: 7px; font-weight: 800; text-transform: uppercase; }
+.assessment-monitor-metrics b { margin-top: 4px; font-size: 9px; }
+.mentor-progress { margin-top: 17px; padding-top: 15px; border-top: 1px solid #e8edeb; }
+.mentor-progress > small { color: #84938e; font-size: 8px; font-weight: 800; letter-spacing: .5px; text-transform: uppercase; }
+.mentor-progress > p { margin: 8px 0 0; color: #a26335; font-size: 9px; }
+.mentor-progress > div { display: flex; flex-wrap: wrap; gap: 7px; margin-top: 9px; }
+.mentor-progress > div > span { display: flex; align-items: center; gap: 8px; padding: 7px 8px 7px 10px; background: #f5f8f6; border: 1px solid #e1e8e5; border-radius: 8px; }
+.mentor-progress > div b { font-size: 8px; }
+.mentor-progress .review-status { padding: 4px 6px; font-size: 7px; }
 .approval-list, .adjudication-list { display: grid; gap: 15px; margin-top: 35px; }
 .approval-list > article, .adjudication-card { padding: 22px; background: white; border: 1px solid #dfe7e4; border-radius: 15px; }
 .reviewer-identity { display: flex; align-items: center; gap: 11px; }
@@ -243,6 +285,9 @@ button { color: inherit; }
   .portal-account > span { display: none; }
   .admin-metrics { grid-template-columns: 1fr 1fr; }
   .workspace-heading { align-items: flex-start; flex-direction: column; }
+  .admin-data-head { display: none; }
+  .admin-data-row { grid-template-columns: 1fr 1fr; gap: 16px; }
+  .assessment-monitor-metrics { grid-template-columns: 1fr 1fr; }
 }
 
 @media (max-width: 640px) {
@@ -274,6 +319,9 @@ button { color: inherit; }
   .workspace-stats { width: 100%; }
   .workspace-stat { flex: 1; min-width: 0; }
   .admin-metrics, .admin-actions, .expertise-tags, .score-comparison { grid-template-columns: 1fr; }
+  .admin-data-row { grid-template-columns: 1fr; }
+  .assessment-monitor-head { flex-direction: column; }
+  .assessment-monitor-metrics { grid-template-columns: 1fr; }
 }
 
 .topbar {

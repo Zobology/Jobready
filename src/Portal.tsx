@@ -1,7 +1,6 @@
 import { useEffect, useMemo, useState, type FormEvent } from 'react'
 import {
   ArrowRight,
-  BarChart3,
   Bell,
   Check,
   CheckCircle2,
@@ -38,7 +37,7 @@ import type { AssignedReview, PortalAccount, PortalDatabase, PortalSubmission, R
 type PublicView = 'landing' | 'signin' | 'signup' | 'reviewer-signup'
 type CandidateView = 'profile' | 'assessment' | 'waiting' | 'results'
 type ReviewerView = 'queue' | 'review'
-type AdminView = 'dashboard' | 'reviewers' | 'adjudication'
+type AdminView = 'dashboard' | 'reviewers' | 'candidates' | 'assessments' | 'adjudication'
 
 const initialProfile: CandidateProfile = {
   name: '',
@@ -311,7 +310,7 @@ export default function Portal() {
     ? [{ id: 'assessment', label: 'Assessment' }, { id: 'results', label: 'Results' }]
     : account.role === 'reviewer'
       ? [{ id: 'queue', label: 'Assessment queue' }]
-      : [{ id: 'dashboard', label: 'Overview' }, { id: 'reviewers', label: 'Mentors' }, { id: 'adjudication', label: 'Adjudication' }]
+      : [{ id: 'dashboard', label: 'Overview' }, { id: 'reviewers', label: 'Mentors' }, { id: 'candidates', label: 'Candidates' }, { id: 'assessments', label: 'Assessments' }, { id: 'adjudication', label: 'Adjudication' }]
 
   return (
     <div className="portal-shell">
@@ -654,8 +653,16 @@ function Stat({ icon, label, value }: { icon: React.ReactNode; label: string; va
 
 function AdminPanel({ view, database, onView, onUpdate, onReviewerDecision, onPublish }: { view: AdminView; database: PortalDatabase; onView: (view: AdminView) => void; onUpdate: (database: PortalDatabase) => void; onReviewerDecision?: (userId: string, status: 'approved' | 'rejected') => Promise<void>; onPublish?: (submissionId: string, choice: string) => Promise<void> }) {
   const pendingReviewers = database.reviewers.filter((item) => item.status === 'pending')
+  const candidates = database.accounts.filter((item) => item.role === 'candidate')
+  const pendingAssessments = database.submissions.filter((item) => ['awaiting_review', 'under_review'].includes(item.status))
   const adjudications = database.submissions.filter((item) => item.status === 'adjudication')
-  const published = database.submissions.filter((item) => item.status === 'published')
+  const headings: Record<AdminView, { title: string; description: string }> = {
+    dashboard: { title: 'Operations overview', description: 'Monitor registrations, mentor access, assessment reviews, and final scoring.' },
+    reviewers: { title: 'Mentor registrations', description: 'Approve mentor profiles before they can receive matching review opportunities.' },
+    candidates: { title: 'Candidate registrations', description: 'Track every registered candidate and whether their assessment is pending or completed.' },
+    assessments: { title: 'Assessments with mentors', description: 'Monitor matching, acceptance, and scoring progress for submitted assessments.' },
+    adjudication: { title: 'Score adjudication', description: 'Resolve independently completed mentor reviews and publish the final result.' },
+  }
 
   function approveReviewer(userId: string, status: 'approved' | 'rejected') {
     if (onReviewerDecision) {
@@ -691,9 +698,11 @@ function AdminPanel({ view, database, onView, onUpdate, onReviewerDecision, onPu
   }
 
   return (
-    <div className="admin-page"><div className="workspace-heading"><div><div className="eyebrow"><span /> Admin control centre</div><h1>{view === 'dashboard' ? 'Operations overview' : view === 'reviewers' ? 'Mentor approvals' : 'Score adjudication'}</h1><p>Quality control for mentor access, assessment assignment, and final scores.</p></div></div>
-      {view === 'dashboard' && <><div className="admin-metrics"><Metric label="Assessments" value={database.submissions.length} icon={<ClipboardCheck />} /><Metric label="Pending mentors" value={pendingReviewers.length} icon={<Users />} alert={pendingReviewers.length > 0} /><Metric label="Awaiting adjudication" value={adjudications.length} icon={<ScaleIcon />} alert={adjudications.length > 0} /><Metric label="Published results" value={published.length} icon={<BarChart3 />} /></div><div className="admin-actions"><button onClick={() => onView('reviewers')}><UserCheck /><span><b>Review mentor applications</b><small>{pendingReviewers.length} pending approval</small></span><ArrowRight /></button><button onClick={() => onView('adjudication')}><ScaleIcon /><span><b>Resolve dual reviews</b><small>{adjudications.length} assessments need a final decision</small></span><ArrowRight /></button></div></>}
+    <div className="admin-page"><div className="workspace-heading"><div><div className="eyebrow"><span /> Admin control centre</div><h1>{headings[view].title}</h1><p>{headings[view].description}</p></div></div>
+      {view === 'dashboard' && <><div className="admin-metrics"><Metric label="Registered mentors" value={database.reviewers.length} icon={<UserCheck />} /><Metric label="Registered candidates" value={candidates.length} icon={<Users />} /><Metric label="Pending mentor approvals" value={pendingReviewers.length} icon={<Clock3 />} alert={pendingReviewers.length > 0} /><Metric label="With mentors" value={pendingAssessments.length} icon={<ClipboardCheck />} alert={pendingAssessments.length > 0} /></div><div className="admin-actions"><button onClick={() => onView('reviewers')}><UserCheck /><span><b>Mentor registrations</b><small>{pendingReviewers.length} awaiting an approval decision</small></span><ArrowRight /></button><button onClick={() => onView('candidates')}><Users /><span><b>Candidate registrations</b><small>{candidates.length} candidates · assessment status tracking</small></span><ArrowRight /></button><button onClick={() => onView('assessments')}><ClipboardCheck /><span><b>Assessments with mentors</b><small>{pendingAssessments.length} currently awaiting or under review</small></span><ArrowRight /></button><button onClick={() => onView('adjudication')}><ScaleIcon /><span><b>Resolve dual reviews</b><small>{adjudications.length} assessments need a final decision</small></span><ArrowRight /></button></div></>}
       {view === 'reviewers' && <ReviewerApprovals database={database} onDecision={approveReviewer} />}
+      {view === 'candidates' && <CandidateRegistrations database={database} />}
+      {view === 'assessments' && <PendingAssessments database={database} />}
       {view === 'adjudication' && <AdjudicationQueue database={database} onPublish={publish} />}
     </div>
   )
@@ -706,7 +715,26 @@ function Metric({ label, value, icon, alert }: { label: string; value: number; i
 function ScaleIcon() { return <span className="scale-icon">⚖</span> }
 
 function ReviewerApprovals({ database, onDecision }: { database: PortalDatabase; onDecision: (userId: string, status: 'approved' | 'rejected') => void }) {
-  return <div className="approval-list">{database.reviewers.length === 0 ? <div className="empty-admin">No mentor applications.</div> : database.reviewers.map((profile) => { const account = database.accounts.find((item) => item.id === profile.userId); const name = account ? `${account.firstName || ''} ${account.lastName || ''}`.trim() : ''; return <article key={profile.userId}><div className="reviewer-identity"><i>{(name || account?.email || 'M')[0].toUpperCase()}</i><span><b>{name || account?.email}</b><small>{account?.email} · Applied {new Date(profile.appliedAt).toLocaleDateString()}</small></span><em className={`approval-status ${profile.status}`}>{profile.status}</em></div><div className="mentor-credentials">{profile.linkedinProfile ? <a href={profile.linkedinProfile} target="_blank" rel="noreferrer">View LinkedIn profile ↗</a> : <span>LinkedIn not provided</span>}{profile.resumeKey ? backendEnabled ? <a href={`/api/files/${encodeURIComponent(profile.resumeKey)}`} target="_blank" rel="noreferrer">View résumé ↗</a> : <span>Résumé attached</span> : <span>No résumé provided</span>}</div><div className="expertise-tags"><div><small>Roles</small><p>{profile.roleIds.map((id) => roles.find((item) => item.id === id)?.name).filter(Boolean).map((name) => <span key={name}>{name}</span>)}</p></div><div><small>Industries</small><p>{profile.industryIds.map((id) => industries.find((item) => item.id === id)?.name).filter(Boolean).map((name) => <span key={name}>{name}</span>)}</p></div></div>{profile.status === 'pending' && <div className="approval-actions"><button className="reject-button" onClick={() => onDecision(profile.userId, 'rejected')}>Reject</button><button className="approve-button" onClick={() => onDecision(profile.userId, 'approved')}><Check size={15} /> Approve mentor</button></div>}</article> })}</div>
+  const profiles = [...database.reviewers].sort((a, b) => Number(b.status === 'pending') - Number(a.status === 'pending') || b.appliedAt.localeCompare(a.appliedAt))
+  return <><div className="admin-rule-note"><ShieldCheck size={18} /><span><b>Approval controls matching access</b><small>Only approved mentors are included when Zobology generates assessment review opportunities.</small></span></div><div className="approval-list">{profiles.length === 0 ? <div className="empty-admin">No mentor registrations.</div> : profiles.map((profile) => { const account = database.accounts.find((item) => item.id === profile.userId); const name = account ? `${account.firstName || ''} ${account.lastName || ''}`.trim() : ''; return <article key={profile.userId}><div className="reviewer-identity"><i>{(name || account?.email || 'M')[0].toUpperCase()}</i><span><b>{name || account?.email}</b><small>{account?.email} · Registered {new Date(profile.appliedAt).toLocaleDateString()}</small></span><em className={`approval-status ${profile.status}`}>{profile.status}</em></div><div className="mentor-credentials">{profile.linkedinProfile ? <a href={profile.linkedinProfile} target="_blank" rel="noreferrer">View LinkedIn profile ↗</a> : <span>LinkedIn not provided</span>}{profile.resumeKey ? backendEnabled ? <a href={`/api/files/${encodeURIComponent(profile.resumeKey)}`} target="_blank" rel="noreferrer">View résumé ↗</a> : <span>Résumé attached</span> : <span>No résumé provided</span>}</div><div className="expertise-tags"><div><small>Roles</small><p>{profile.roleIds.map((id) => roles.find((item) => item.id === id)?.name).filter(Boolean).map((name) => <span key={name}>{name}</span>)}</p></div><div><small>Industries</small><p>{profile.industryIds.map((id) => industries.find((item) => item.id === id)?.name).filter(Boolean).map((name) => <span key={name}>{name}</span>)}</p></div></div>{profile.status === 'pending' && <div className="approval-actions"><button className="reject-button" onClick={() => onDecision(profile.userId, 'rejected')}>Reject</button><button className="approve-button" onClick={() => onDecision(profile.userId, 'approved')}><Check size={15} /> Approve mentor</button></div>}</article> })}</div></>
+}
+
+function candidateAssessmentStatus(submission?: PortalSubmission) {
+  if (!submission) return { label: 'Assessment pending', detail: 'Not submitted', tone: 'pending' }
+  if (submission.status === 'awaiting_review') return { label: 'Assessment done', detail: 'Waiting for mentor', tone: 'active' }
+  if (submission.status === 'under_review') return { label: 'Assessment done', detail: 'Mentor review in progress', tone: 'active' }
+  if (submission.status === 'adjudication') return { label: 'Assessment done', detail: 'Admin decision pending', tone: 'decision' }
+  return { label: 'Assessment complete', detail: 'Result published', tone: 'done' }
+}
+
+function CandidateRegistrations({ database }: { database: PortalDatabase }) {
+  const candidates = database.accounts.filter((item) => item.role === 'candidate').sort((a, b) => b.createdAt.localeCompare(a.createdAt))
+  return <div className="admin-data-table candidate-admin-table"><div className="admin-data-head"><span>Candidate</span><span>Registered</span><span>Target profile</span><span>Assessment status</span></div>{candidates.length === 0 ? <div className="empty-admin">No candidate registrations.</div> : candidates.map((candidate) => { const submission = database.submissions.filter((item) => item.candidateId === candidate.id).sort((a, b) => b.submittedAt.localeCompare(a.submittedAt))[0]; const status = candidateAssessmentStatus(submission); const name = `${candidate.firstName || ''} ${candidate.lastName || ''}`.trim() || candidate.email; return <div className="admin-data-row" key={candidate.id}><div className="admin-person"><i>{name[0].toUpperCase()}</i><span><b>{name}</b><small>{candidate.email}</small></span></div><div><b>{new Date(candidate.createdAt).toLocaleDateString()}</b><small>{candidate.id}</small></div><div><b>{submission?.role.name ?? 'Not selected'}</b><small>{submission ? `${submission.industry.name} · ${submission.profile.level}` : 'Profile or assessment not submitted'}</small></div><div><em className={`admin-status ${status.tone}`}>{status.label}</em><small>{status.detail}</small></div></div> })}</div>
+}
+
+function PendingAssessments({ database }: { database: PortalDatabase }) {
+  const submissions = database.submissions.filter((item) => ['awaiting_review', 'under_review'].includes(item.status)).sort((a, b) => a.submittedAt.localeCompare(b.submittedAt))
+  return <div className="assessment-monitor-list">{submissions.length === 0 ? <div className="empty-admin"><CheckCircle2 size={26} /><b>No assessments pending with mentors</b><span>Newly submitted and active mentor reviews will appear here.</span></div> : submissions.map((submission) => { const reviews = database.reviews.filter((item) => item.submissionId === submission.id && item.status !== 'declined'); const active = reviews.filter((item) => ['accepted', 'in_review', 'completed'].includes(item.status)); const available = reviews.filter((item) => item.status === 'available'); const completed = reviews.filter((item) => item.status === 'completed'); return <article key={submission.id} className="assessment-monitor-card"><div className="assessment-monitor-head"><div><small>{submission.id}</small><h3>{submission.profile.name}</h3><p>{submission.role.name} · {submission.industry.name} · {submission.profile.level}</p></div><em className={`admin-status ${submission.status === 'awaiting_review' ? 'pending' : 'active'}`}>{submission.status === 'awaiting_review' ? 'Waiting for mentor' : 'Under review'}</em></div><div className="assessment-monitor-metrics"><span><small>Submitted</small><b>{new Date(submission.submittedAt).toLocaleString()}</b></span><span><small>Mentors accepted</small><b>{active.length}/2</b></span><span><small>Reviews completed</small><b>{completed.length}/2</b></span><span><small>Open opportunities</small><b>{available.length}</b></span></div><div className="mentor-progress"><small>Mentor progress</small>{reviews.length === 0 ? <p>No approved mentor match is currently available.</p> : <div>{reviews.slice(0, 8).map((review) => <span key={review.id}><b>{review.reviewerName}</b><em className={`review-status ${review.status}`}>{review.status.replace('_', ' ')}</em></span>)}{reviews.length > 8 && <span><b>+{reviews.length - 8} more matching mentors</b></span>}</div>}</div></article> })}</div>
 }
 
 function AdjudicationQueue({ database, onPublish }: { database: PortalDatabase; onPublish: (submission: PortalSubmission, choice: string) => void }) {
