@@ -545,25 +545,25 @@ function Landing({ onSignIn, onSignUp, onReviewer }: { onSignIn: () => void; onS
           <div className="landing-copy">
             <h1>Zobology</h1>
             <h2>Assess. Improve.<br /><em>Get Hired.</em></h2>
-            <p>Know exactly where you stand for the role you want. Take a job-specific assessment and receive evidence-based evaluation from industry experts.</p>
+            <p>Know exactly where you stand for the role you want. Take a job-specific assessment and receive evidence-based insights powered by AI and governed by industry experts.</p>
             <div className="landing-actions"><button className="primary-button compact" onClick={onSignUp}>Start your assessment <ArrowRight size={17} /></button><button className="secondary-button" onClick={onSignIn}>Sign in</button></div>
-            <div className="trust-row"><span><ShieldCheck size={16} /> Human evaluated</span><span><Target size={16} /> Role specific</span><span><Clock3 size={16} /> Results in 24 hours</span></div>
+            <div className="trust-row"><span><Sparkles size={16} /> AI powered</span><span><ShieldCheck size={16} /> Industry Expert Governed</span><span><Target size={16} /> Role specific</span></div>
           </div>
           <div className="readiness-visual">
             <div className="visual-top"><span>JOB READINESS PROFILE</span><b>Operations · E-commerce</b></div>
-            <div className="visual-score"><div><strong>76</strong><span>/100</span></div><p><b>Nearly job ready</b><span>Expert-reviewed evidence</span></p></div>
+            <div className="visual-score"><div><strong>76</strong><span>/100</span></div><p><b>Nearly job ready</b><span>AI-powered evidence analysis</span></p></div>
             <div className="visual-bars">
               <ScorePreview label="Core employability" score={82} />
               <ScorePreview label="Role capability" score={74} />
               <ScorePreview label="Industry context" score={68} />
             </div>
-            <div className="expert-stamp"><UserCheck size={18} /><span><b>2 expert reviews</b><small>Adjudicated for consistency</small></span><CheckCircle2 size={18} /></div>
+            <div className="expert-stamp"><UserCheck size={18} /><span><b>Industry Expert Governed</b><small>Calibrated for consistency</small></span><CheckCircle2 size={18} /></div>
           </div>
         </section>
         <section className="landing-pillars">
           <article><span>01</span><h3>Built for your target</h3><p>Questions adapt to your education, experience, role, industry, and target level.</p></article>
           <article><span>02</span><h3>Show, don’t select</h3><p>Written responses, audio communication, and realistic job simulations—not a psychometric quiz.</p></article>
-          <article><span>03</span><h3>Reviewed by experts</h3><p>Matched industry professionals score every response against standardized rubrics.</p></article>
+          <article><span>03</span><h3>Evaluated with intelligence</h3><p>AI analyzes every response against expert-governed, job-specific scoring rubrics.</p></article>
         </section>
       </main>
       <footer className="landing-footer"><Brand /><p>© 2026 Zobology. Job readiness, made visible.</p><button onClick={onReviewer}>Register as a Mentor <ArrowRight size={13} /></button></footer>
@@ -697,7 +697,7 @@ function AuthScreen({
 
   return (
     <div className="auth-page">
-      <aside className="auth-story"><button className="back-link" onClick={onBack}>← Back to home</button><Brand /><div><span className="eyebrow"><i /> Zobology intelligence engine</span><h1>{reviewerMode ? 'Help talent become job ready.' : 'Your next role starts with knowing your readiness.'}</h1><p>{reviewerMode ? 'Apply your industry experience to structured, evidence-based candidate evaluations.' : 'Personalized assessments. Human expert review. Actionable readiness insights.'}</p></div><blockquote>“What does job-ready mean for this exact role?”<small>That is the question every Zobology assessment answers.</small></blockquote></aside>
+      <aside className="auth-story"><button className="back-link" onClick={onBack}>← Back to home</button><Brand /><div><span className="eyebrow"><i /> Zobology intelligence engine</span><h1>{reviewerMode ? 'Help talent become job ready.' : 'Your next role starts with knowing your readiness.'}</h1><p>{reviewerMode ? 'Apply your industry experience to structured, evidence-based candidate evaluations.' : 'Personalized assessments. AI-powered evaluation. Actionable readiness insights.'}</p></div><blockquote>“What does job-ready mean for this exact role?”<small>That is the question every Zobology assessment answers.</small></blockquote></aside>
       <main className={reviewerMode ? 'auth-card reviewer-auth-card' : 'auth-card'}>
         <div className="auth-card-heading"><span>{reviewerMode ? <UserCheck /> : <ShieldCheck />}</span><h2>{signInMode ? 'Welcome back' : reviewerMode ? 'Register as a mentor' : 'Create your account'}</h2><p>{signInMode ? 'Sign in to continue to your workspace.' : reviewerMode ? 'Tell us where your expertise is strongest.' : 'Start with your name and email. Your profile comes next.'}</p></div>
         <form onSubmit={submit}>
@@ -741,7 +741,7 @@ function CandidateWaiting({ submission }: { submission: PortalSubmission }) {
   const target = new Date(new Date(submission.submittedAt).getTime() + 24 * 60 * 60 * 1000)
   const completed = submission.status === 'published'
   return (
-    <div className="status-page"><section className="status-card"><div className="status-icon"><CheckCircle2 size={32} /></div><div className="eyebrow"><span /> Assessment submitted</div><h1>Thank you, {submission.profile.name}.</h1><p className="status-lead">Please wait for your result. AI prepares the first evaluation, then an industry mentor validates it before any score is published.</p><div className="status-timeline"><div className="done"><i><Check size={13} /></i><span><b>Assessment completed</b><small>{new Date(submission.submittedAt).toLocaleString()}</small></span></div><div className={submission.aiReviewStatus === 'completed' ? 'done' : 'active'}><i>{submission.aiReviewStatus === 'completed' ? <Check size={13} /> : 2}</i><span><b>AI evidence review</b><small>{submission.aiReviewStatus === 'completed' ? 'Draft evaluation prepared' : submission.aiReviewStatus === 'unavailable' ? 'Routed safely to a mentor' : 'Analyzing responses and work samples'}</small></span></div><div className={submission.status === 'under_review' ? 'active' : ''}><i>3</i><span><b>Mentor validation</b><small>{submission.assignedReviewerIds.length ? `${submission.assignedReviewerIds.length} mentor assigned` : 'Starts after the AI draft is ready'}</small></span></div><div className={completed ? 'done' : ''}><i>{completed ? <Check size={13} /> : 4}</i><span><b>Results published</b><small>Expected by {target.toLocaleString()}</small></span></div></div><div className="submission-reference"><span><small>Submission ID</small><b>{submission.id}</b></span><span><small>Target profile</small><b>{submission.role.name} · {submission.industry.name}</b></span><span><small>Status</small><b>{submission.status.replace('_', ' ')}</b></span></div><div className="human-review-note"><ShieldCheck size={20} /><span><strong>Human approval is mandatory during calibration</strong>AI-generated scores remain private until a mentor checks the evidence and finalizes the evaluation.</span></div></section></div>
+    <div className="status-page"><section className="status-card"><div className="status-icon"><CheckCircle2 size={32} /></div><div className="eyebrow"><span /> Assessment submitted</div><h1>Thank you, {submission.profile.name}.</h1><p className="status-lead">Please wait while Zobology’s AI evaluates your responses against the benchmark for your target role and industry.</p><div className="status-timeline"><div className="done"><i><Check size={13} /></i><span><b>Assessment completed</b><small>{new Date(submission.submittedAt).toLocaleString()}</small></span></div><div className={submission.aiReviewStatus === 'completed' ? 'done' : 'active'}><i>{submission.aiReviewStatus === 'completed' ? <Check size={13} /> : 2}</i><span><b>AI evidence analysis</b><small>{submission.aiReviewStatus === 'completed' ? 'Evaluation prepared' : submission.aiReviewStatus === 'unavailable' ? 'Quality safeguards in progress' : 'Analyzing responses and work samples'}</small></span></div><div className={submission.status === 'under_review' ? 'active' : ''}><i>3</i><span><b>Quality governance</b><small>Expert-governed scoring standards are applied</small></span></div><div className={completed ? 'done' : ''}><i>{completed ? <Check size={13} /> : 4}</i><span><b>Results published</b><small>Expected by {target.toLocaleString()}</small></span></div></div><div className="submission-reference"><span><small>Submission ID</small><b>{submission.id}</b></span><span><small>Target profile</small><b>{submission.role.name} · {submission.industry.name}</b></span><span><small>Status</small><b>{submission.status.replace('_', ' ')}</b></span></div><div className="human-review-note"><ShieldCheck size={20} /><span><strong>AI Powered · Industry Expert Governed</strong>Your evaluation follows structured, job-specific rubrics designed and calibrated for consistent readiness insights.</span></div></section></div>
   )
 }
 

@@ -49,22 +49,22 @@ export function SubmissionConfirmation({
         <div className={completed ? 'submission-icon completed' : 'submission-icon'}>
           {completed ? <CheckCircle2 size={31} /> : <ClipboardCheck size={31} />}
         </div>
-        <div className="eyebrow"><span /> {completed ? 'Expert review complete' : 'Assessment submitted'}</div>
-        <h1>{completed ? `${profile.name}, your reviewed results are ready.` : `Thank you, ${profile.name}.`}</h1>
+        <div className="eyebrow"><span /> {completed ? 'AI evaluation complete' : 'Assessment submitted'}</div>
+        <h1>{completed ? `${profile.name}, your results are ready.` : `Thank you, ${profile.name}.`}</h1>
         <p>{completed
-          ? 'Your readiness scores now reflect rubric-level evaluation by a human mentor.'
-          : 'Your responses have been placed in the expert review queue. No automated readiness score has been finalized.'}</p>
+          ? 'Your readiness scores reflect evidence-based evaluation against job-specific competency rubrics.'
+          : 'Zobology’s AI is analyzing your responses against the benchmark for your target role and industry.'}</p>
 
         <div className="submission-summary">
           <div><small>Target profile</small><strong>{role.name}</strong><span>{industry.name} · {profile.level}</span></div>
           <div><small>Submission ID</small><strong>{submissionId}</strong><span>{new Date(submittedAt).toLocaleString()}</span></div>
-          <div><small>Review status</small><strong className={`status-${review.status}`}>{review.status.replace('_', ' ')}</strong><span>{completed ? `Reviewed by ${review.reviewerName}` : 'Awaiting assignment'}</span></div>
+          <div><small>Evaluation status</small><strong className={`status-${review.status}`}>{review.status.replace('_', ' ')}</strong><span>{completed ? 'Evaluation complete' : 'Quality checks in progress'}</span></div>
         </div>
 
-        <div className="human-review-note"><ShieldCheck size={19} /><span><strong>Human-reviewed assessment</strong>Your evidence is evaluated criterion by criterion against the target role benchmark.</span></div>
+        <div className="human-review-note"><ShieldCheck size={19} /><span><strong>AI Powered · Industry Expert Governed</strong>Your evidence is evaluated criterion by criterion against the target role benchmark.</span></div>
         <div className="submission-actions">
           {completed
-            ? <button className="primary-button compact" onClick={onViewResults}>View reviewed results <ArrowRight size={17} /></button>
+            ? <button className="primary-button compact" onClick={onViewResults}>View results <ArrowRight size={17} /></button>
             : <button className="secondary-button" onClick={onOpenReview}><UserCheck size={17} /> Open mentor workspace</button>}
         </div>
       </section>

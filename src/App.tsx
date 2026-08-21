@@ -261,7 +261,7 @@ function Header({
         <button disabled>Benchmarks</button>
       </nav>
       <div className="header-actions">
-        <span className="beta-badge"><CheckCircle2 size={12} /> Human reviewed</span>
+        <span className="beta-badge"><Sparkles size={12} /> AI powered</span>
         <button className="profile-button" aria-label="User profile"><CircleUserRound size={22} /></button>
         <button className="menu-button" aria-label="Toggle menu" onClick={() => setMobileMenu(!mobileMenu)}>
           {mobileMenu ? <X /> : <Menu />}
@@ -414,7 +414,7 @@ export function ProfileBuilder({
         <button className="primary-button" disabled={!isValid || isPreparing} onClick={() => void onContinue()}>
           {isPreparing ? 'Analyzing your profile…' : 'Build my assessment'} {!isPreparing && <ArrowRight size={18} />}
         </button>
-        <p className="privacy-copy">Your responses and uploaded evidence are securely processed for an AI draft evaluation and mentor validation. Scores remain private until the required review is complete.</p>
+        <p className="privacy-copy">Your responses and uploaded evidence are securely processed through Zobology’s AI-powered, industry-expert-governed evaluation engine.</p>
       </section>
     </div>
   )
@@ -811,7 +811,7 @@ export function Results({
     <div className="results-page">
       <section className="results-hero">
         <div className="results-title">
-          <div className="eyebrow"><span /> {mentorView ? 'Mentor evaluation report' : 'Expert review complete'}</div>
+          <div className="eyebrow"><span /> {mentorView ? 'Mentor evaluation report' : 'AI evaluation complete'}</div>
           <h1>{mentorView ? `${profile.name}'s evaluation result.` : `${firstName}, here’s your readiness snapshot.`}</h1>
           <p>{industry.name} · {role.name} · {profile.level}</p>
         </div>
@@ -862,7 +862,7 @@ export function Results({
       <section className="response-analysis-card">
         <div className="response-analysis-heading">
           <div><Sparkles size={20} /></div>
-          <span><small>Human-reviewed evidence</small><h2>Expert assessment feedback</h2><p>Reviewed criterion by criterion by {reviewerName}.</p></span>
+          <span><small>AI-powered evidence analysis</small><h2>Job readiness feedback</h2><p>{mentorView ? `Validated criterion by criterion by ${reviewerName}.` : 'Evaluated against industry-expert-governed scoring standards.'}</p></span>
         </div>
         <div className="feedback-columns">
           <article>
