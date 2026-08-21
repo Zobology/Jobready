@@ -86,10 +86,11 @@ function accountName(database: PortalDatabase, userId: string) {
 export default function Portal() {
   const [requestedReviewId] = useState(() => new URLSearchParams(window.location.search).get('review'))
   const [requestedAssessment] = useState(() => window.location.pathname.replace(/\/+$/, '') === '/assessment')
+  const [requestedMentorRegistration] = useState(() => window.location.pathname.replace(/\/+$/, '') === '/mentor/register')
   const [database, setDatabase] = useState<PortalDatabase>(() => loadDatabase())
   const [ready, setReady] = useState(false)
   const [sessionId, setSessionId] = useState<string | null>(() => loadSession())
-  const [publicView, setPublicView] = useState<PublicView>(requestedReviewId || requestedAssessment ? 'signin' : 'landing')
+  const [publicView, setPublicView] = useState<PublicView>(requestedMentorRegistration ? 'reviewer-signup' : requestedReviewId || requestedAssessment ? 'signin' : 'landing')
   const [candidateView, setCandidateView] = useState<CandidateView>('profile')
   const [reviewerView, setReviewerView] = useState<ReviewerView>(requestedReviewId ? 'review' : 'queue')
   const [adminView, setAdminView] = useState<AdminView>('dashboard')
@@ -160,9 +161,17 @@ export default function Portal() {
     if (!backendEnabled) saveDatabase(next)
   }
 
+  function navigatePublic(view: PublicView) {
+    const path = view === 'reviewer-signup' ? '/mentor/register' : '/'
+    window.history.pushState({}, '', path)
+    setPublicView(view)
+    window.scrollTo(0, 0)
+  }
+
   async function signOut() {
     if (backendEnabled) await api.signout().catch(() => undefined)
     saveSession(null)
+    window.history.replaceState({}, '', '/')
     setSessionId(null)
     setPublicView('landing')
     setStartingNewAssessment(false)
@@ -359,14 +368,15 @@ export default function Portal() {
   if (!ready) return <div className="portal-loader"><span className="brand-mark"><TrendingUp /></span><p>Preparing Zobology…</p></div>
 
   if (!account) {
-    if (publicView === 'landing') return <Landing onSignIn={() => setPublicView('signin')} onSignUp={() => setPublicView('signup')} onReviewer={() => setPublicView('reviewer-signup')} />
+    if (publicView === 'landing') return <Landing onSignIn={() => navigatePublic('signin')} onSignUp={() => navigatePublic('signup')} onReviewer={() => navigatePublic('reviewer-signup')} />
     return (
       <AuthScreen
         mode={publicView}
         database={database}
-        onBack={() => setPublicView('landing')}
-        onSwitch={setPublicView}
+        onBack={() => navigatePublic('landing')}
+        onSwitch={navigatePublic}
         onAuthenticated={(nextDatabase, userId) => {
+          window.history.replaceState({}, '', '/')
           updateDatabase(nextDatabase)
           saveSession(userId)
           setSessionId(userId)
@@ -374,6 +384,7 @@ export default function Portal() {
           if (name) setProfile((current) => current.name ? current : { ...current, name })
         }}
         onServerAuthenticated={(nextDatabase, userId) => {
+          window.history.replaceState({}, '', '/')
           updateDatabase(nextDatabase)
           setSessionId(userId)
           const name = accountName(nextDatabase, userId)
