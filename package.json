@@ -18,7 +18,8 @@
     "ai-reviews": "node server-dist/server/jobs/processAiReviews.js",
     "publish-single-review": "node server-dist/server/publishSingleReview.js",
     "preview": "vite preview --host 0.0.0.0",
-    "start": "npm run migrate && node server-dist/server/index.js"
+    "start": "npm run migrate && node server-dist/server/index.js",
+    "test": "npm run build:server && node --test server-dist/server/*.test.js"
   },
   "dependencies": {
     "@aws-sdk/client-s3": "^3.1112.0",

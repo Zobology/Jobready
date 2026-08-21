@@ -1,6 +1,7 @@
 import type { PoolClient } from 'pg'
 import { pool } from './db.js'
 import type { AuthenticatedUser } from './auth.js'
+import { activeAiModel } from './aiConfig.js'
 
 function account(row: Record<string, unknown>) {
   return { id: row.id, email: row.email, firstName: row.first_name ?? '', lastName: row.last_name ?? '', passwordHash: '', role: row.role, createdAt: row.created_at }
@@ -103,12 +104,12 @@ export async function loadPortalState(user: AuthenticatedUser) {
     sentAt: row.sent_at ?? undefined,
   }))
 
-  const activeAiModel = process.env.OPENAI_REVIEW_MODEL ?? 'gpt-5.6-terra'
-  let aiGovernance = { mode: 'human_required', model: activeAiModel, minimumReviews: 100, maximumMae: 0.35, minimumExactAgreement: 0.75, reviews: 0, criteria: 0, mae: 0, exactAgreement: 0, eligible: false }
+  const activeModel = activeAiModel()
+  let aiGovernance = { mode: 'human_required', model: activeModel, minimumReviews: 100, maximumMae: 0.35, minimumExactAgreement: 0.75, reviews: 0, criteria: 0, mae: 0, exactAgreement: 0, eligible: false }
   if (user.role === 'admin') {
     const [ruleResult, statsResult] = await Promise.all([
       pool.query('select * from ai_governance where singleton=true'),
-      pool.query(`select count(distinct review_assignment_id) reviews,count(*) criteria,avg(absolute_delta) mae,avg(case when exact_match then 1.0 else 0.0 end) exact_agreement from ai_human_calibration where ai_model=$1`, [activeAiModel]),
+      pool.query(`select count(distinct review_assignment_id) reviews,count(*) criteria,avg(absolute_delta) mae,avg(case when exact_match then 1.0 else 0.0 end) exact_agreement from ai_human_calibration where ai_model=$1`, [activeModel]),
     ])
     const rule = ruleResult.rows[0]
     const stats = statsResult.rows[0]
@@ -117,7 +118,7 @@ export async function loadPortalState(user: AuthenticatedUser) {
     const exactAgreement = Number(stats?.exact_agreement ?? 0)
     aiGovernance = {
       mode: rule?.mode ?? 'human_required',
-      model: activeAiModel,
+      model: activeModel,
       minimumReviews: Number(rule?.minimum_reviews ?? 100),
       maximumMae: Number(rule?.maximum_mae ?? 0.35),
       minimumExactAgreement: Number(rule?.minimum_exact_agreement ?? 0.75),
@@ -132,7 +133,7 @@ export async function loadPortalState(user: AuthenticatedUser) {
   const reviewerStatuses = new Map(reviewRows.map((row) => [String(row.assessment_id), String(row.status)]))
   const submissions = submissionRows.map((row) => {
     const mapped = submission(row)
-    if (user.role === 'candidate') return { ...mapped, aiReview: undefined }
+    if (user.role === 'candidate') return { ...mapped, aiReview: undefined, aiReviewError: undefined }
     if (user.role !== 'reviewer') return mapped
     const status = reviewerStatuses.get(String(row.id))
     if (status && ['accepted', 'in_review', 'completed'].includes(status)) return mapped

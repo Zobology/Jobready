@@ -10,7 +10,7 @@ export const emptyDatabase: PortalDatabase = {
   submissions: [],
   reviews: [],
   notifications: [],
-  aiGovernance: { mode: 'human_required', model: 'gpt-5.6-terra', minimumReviews: 100, maximumMae: 0.35, minimumExactAgreement: 0.75, reviews: 0, criteria: 0, mae: 0, exactAgreement: 0, eligible: false },
+  aiGovernance: { mode: 'human_required', model: 'anthropic/claude-sonnet-5', minimumReviews: 100, maximumMae: 0.35, minimumExactAgreement: 0.75, reviews: 0, criteria: 0, mae: 0, exactAgreement: 0, eligible: false },
 }
 
 export function createId(prefix: string) {
