@@ -595,7 +595,17 @@ app.use('/api', (_request, response) => response.status(404).json({ error: 'API 
 
 const currentDirectory = path.dirname(fileURLToPath(import.meta.url))
 const distDirectory = path.resolve(currentDirectory, '../../dist')
-app.use(express.static(distDirectory, { index: false, maxAge: process.env.NODE_ENV === 'production' ? '1h' : 0 }))
+app.use(express.static(distDirectory, {
+  index: false,
+  maxAge: process.env.NODE_ENV === 'production' ? '1h' : 0,
+  setHeaders: (response, filePath) => {
+    if (filePath.endsWith('zobology-social-card.png')) {
+      response.setHeader('cache-control', 'public, max-age=86400, immutable')
+      response.setHeader('cross-origin-resource-policy', 'cross-origin')
+      response.setHeader('access-control-allow-origin', '*')
+    }
+  },
+}))
 app.use((_request, response) => response.sendFile(path.join(distDirectory, 'index.html')))
 
 app.use((error: unknown, _request: express.Request, response: express.Response, next: express.NextFunction) => {
