@@ -35,7 +35,7 @@ import {
 } from './portalStore'
 import type { AssignedReview, PortalAccount, PortalDatabase, PortalSubmission, ReviewerProfile } from './portalTypes'
 
-type PublicView = 'landing' | 'signin' | 'signup' | 'reviewer-signup'
+type PublicView = 'landing' | 'signin' | 'signup' | 'reviewer-signup' | 'forgot-password' | 'reset-password'
 type CandidateView = 'profile' | 'assessment' | 'waiting' | 'results'
 type ReviewerView = 'queue' | 'review' | 'evaluation'
 type AdminView = 'dashboard' | 'reviewers' | 'candidates' | 'assessments' | 'adjudication' | 'ai-calibration'
@@ -84,13 +84,15 @@ function accountName(database: PortalDatabase, userId: string) {
 }
 
 export default function Portal() {
+  const initialPath = window.location.pathname.replace(/\/+$/, '')
   const [requestedReviewId] = useState(() => new URLSearchParams(window.location.search).get('review'))
-  const [requestedAssessment] = useState(() => window.location.pathname.replace(/\/+$/, '') === '/assessment')
-  const [requestedMentorRegistration] = useState(() => window.location.pathname.replace(/\/+$/, '') === '/mentor/register')
+  const [requestedAssessment] = useState(() => initialPath === '/assessment')
+  const [requestedMentorRegistration] = useState(() => initialPath === '/mentor/register')
+  const [requestedResetToken] = useState(() => new URLSearchParams(window.location.search).get('token') ?? '')
   const [database, setDatabase] = useState<PortalDatabase>(() => loadDatabase())
   const [ready, setReady] = useState(false)
   const [sessionId, setSessionId] = useState<string | null>(() => loadSession())
-  const [publicView, setPublicView] = useState<PublicView>(requestedMentorRegistration ? 'reviewer-signup' : requestedReviewId || requestedAssessment ? 'signin' : 'landing')
+  const [publicView, setPublicView] = useState<PublicView>(initialPath === '/reset-password' ? 'reset-password' : initialPath === '/forgot-password' ? 'forgot-password' : requestedMentorRegistration ? 'reviewer-signup' : requestedReviewId || requestedAssessment ? 'signin' : 'landing')
   const [candidateView, setCandidateView] = useState<CandidateView>('profile')
   const [reviewerView, setReviewerView] = useState<ReviewerView>(requestedReviewId ? 'review' : 'queue')
   const [adminView, setAdminView] = useState<AdminView>('dashboard')
@@ -162,7 +164,7 @@ export default function Portal() {
   }
 
   function navigatePublic(view: PublicView) {
-    const path = view === 'reviewer-signup' ? '/mentor/register' : '/'
+    const path = view === 'reviewer-signup' ? '/mentor/register' : view === 'forgot-password' ? '/forgot-password' : '/'
     window.history.pushState({}, '', path)
     setPublicView(view)
     window.scrollTo(0, 0)
@@ -369,6 +371,7 @@ export default function Portal() {
 
   if (!account) {
     if (publicView === 'landing') return <Landing onSignIn={() => navigatePublic('signin')} onSignUp={() => navigatePublic('signup')} onReviewer={() => navigatePublic('reviewer-signup')} />
+    if (publicView === 'forgot-password' || publicView === 'reset-password') return <PasswordRecoveryScreen mode={publicView} token={requestedResetToken} onBack={() => navigatePublic('signin')} />
     return (
       <AuthScreen
         mode={publicView}
@@ -603,6 +606,7 @@ function AuthScreen({
 }) {
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
+  const [confirmPassword, setConfirmPassword] = useState('')
   const [firstName, setFirstName] = useState('')
   const [lastName, setLastName] = useState('')
   const [linkedinProfile, setLinkedinProfile] = useState('')
@@ -631,6 +635,10 @@ function AuthScreen({
       setError('Enter your first name and last name.')
       return
     }
+    if (!signInMode && password !== confirmPassword) {
+      setError('The passwords do not match.')
+      return
+    }
     if (reviewerMode && (!roleIds.length || !industryIds.length)) {
       setError('Select at least one role and one industry you can assess.')
       return
@@ -655,8 +663,8 @@ function AuthScreen({
         const result = signInMode
           ? await api.signin(normalizedEmail, password)
           : registeredResult ?? await api.signup(reviewerMode
-            ? { firstName: firstName.trim(), lastName: lastName.trim(), email: normalizedEmail, password, role: 'reviewer', linkedinProfile: linkedinProfile.trim(), roleIds, industryIds }
-            : { firstName: firstName.trim(), lastName: lastName.trim(), email: normalizedEmail, password, role: 'candidate' })
+            ? { firstName: firstName.trim(), lastName: lastName.trim(), email: normalizedEmail, password, confirmPassword, role: 'reviewer', linkedinProfile: linkedinProfile.trim(), roleIds, industryIds }
+            : { firstName: firstName.trim(), lastName: lastName.trim(), email: normalizedEmail, password, confirmPassword, role: 'candidate' })
         if (!signInMode && !registeredResult) setRegisteredResult(result)
         if (!signInMode && reviewerMode && mentorResume) {
           await api.upload('resume', mentorResume, mentorResume.name)
@@ -715,6 +723,8 @@ function AuthScreen({
           {!signInMode && <div className="field-grid"><label className="field"><span>First name</span><input type="text" value={firstName} onChange={(event) => setFirstName(event.target.value)} placeholder="First name" autoComplete="given-name" maxLength={80} /></label><label className="field"><span>Last name</span><input type="text" value={lastName} onChange={(event) => setLastName(event.target.value)} placeholder="Last name" autoComplete="family-name" maxLength={80} /></label></div>}
           <label className="field"><span>Email address</span><input type="email" value={email} onChange={(event) => setEmail(event.target.value)} placeholder="you@example.com" autoComplete="email" /></label>
           <label className="field"><span>{signInMode ? 'Password' : 'Set password'}</span><input type="password" value={password} onChange={(event) => setPassword(event.target.value)} placeholder="Minimum 8 characters" autoComplete={signInMode ? 'current-password' : 'new-password'} /></label>
+          {!signInMode && <label className="field"><span>Re-enter password</span><input type="password" value={confirmPassword} onChange={(event) => setConfirmPassword(event.target.value)} placeholder="Enter the same password again" autoComplete="new-password" /></label>}
+          {signInMode && <button type="button" className="forgot-password-link" onClick={() => onSwitch('forgot-password')}>Forgot password?</button>}
           {reviewerMode && (
             <>
               <label className="field"><span>LinkedIn profile <small>Required</small></span><input type="url" value={linkedinProfile} onChange={(event) => setLinkedinProfile(event.target.value)} placeholder="https://www.linkedin.com/in/your-profile" autoComplete="url" maxLength={500} /></label>
@@ -728,6 +738,73 @@ function AuthScreen({
         </form>
         <p className="auth-switch">{signInMode ? <>New to Zobology? <button onClick={() => onSwitch('signup')}>Create an account</button></> : <>Already have an account? <button onClick={() => onSwitch('signin')}>Sign in</button></>}</p>
         {signInMode && !backendEnabled && <div className="demo-access"><strong>Preview accounts</strong><span>Admin: admin@zobology.in / Admin@123</span><span>Mentor: expert1@zobology.in / Mentor@123</span></div>}
+      </main>
+    </div>
+  )
+}
+
+function PasswordRecoveryScreen({ mode, token, onBack }: { mode: 'forgot-password' | 'reset-password'; token: string; onBack: () => void }) {
+  const [email, setEmail] = useState('')
+  const [password, setPassword] = useState('')
+  const [confirmPassword, setConfirmPassword] = useState('')
+  const [message, setMessage] = useState('')
+  const [error, setError] = useState('')
+  const [busy, setBusy] = useState(false)
+  const resetMode = mode === 'reset-password'
+
+  async function submit(event: FormEvent) {
+    event.preventDefault()
+    setError('')
+    setMessage('')
+    if (!backendEnabled) {
+      setError('Password reset is available when connected to the Zobology server.')
+      return
+    }
+    if (resetMode) {
+      if (!token) {
+        setError('This password reset link is invalid or incomplete.')
+        return
+      }
+      if (password.length < 8) {
+        setError('Use a password of at least 8 characters.')
+        return
+      }
+      if (password !== confirmPassword) {
+        setError('The passwords do not match.')
+        return
+      }
+    } else if (!email.trim()) {
+      setError('Enter your email address.')
+      return
+    }
+    setBusy(true)
+    try {
+      if (resetMode) {
+        await api.resetPassword(token, password)
+        setMessage('Your password has been reset. You can now sign in with your new password.')
+      } else {
+        const result = await api.forgotPassword(email.trim().toLowerCase())
+        setMessage(result.message)
+      }
+    } catch (requestError) {
+      setError((requestError as Error).message)
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  return (
+    <div className="auth-page">
+      <aside className="auth-story"><button className="back-link" onClick={onBack}>← Back to sign in</button><Brand /><div><span className="eyebrow"><i /> Secure account recovery</span><h1>Get back to your Zobology journey.</h1><p>Reset access securely and continue from where you left off.</p></div><blockquote>“Your assessment progress stays with your account.”<small>Changing your password will sign out any existing sessions.</small></blockquote></aside>
+      <main className="auth-card">
+        <div className="auth-card-heading"><span><ShieldCheck /></span><h2>{resetMode ? 'Set a new password' : 'Forgot your password?'}</h2><p>{resetMode ? 'Choose a new password for your account.' : 'Enter the email used for your candidate or mentor account.'}</p></div>
+        <form onSubmit={submit}>
+          {resetMode ? <><label className="field"><span>New password</span><input type="password" value={password} onChange={(event) => setPassword(event.target.value)} placeholder="Minimum 8 characters" autoComplete="new-password" /></label><label className="field"><span>Re-enter password</span><input type="password" value={confirmPassword} onChange={(event) => setConfirmPassword(event.target.value)} placeholder="Enter the same password again" autoComplete="new-password" /></label></> : <label className="field"><span>Email address</span><input type="email" value={email} onChange={(event) => setEmail(event.target.value)} placeholder="you@example.com" autoComplete="email" /></label>}
+          {error && <p className="auth-error">{error}</p>}
+          {message && <p className="auth-success">{message}</p>}
+          {!message && <button className="primary-button" disabled={busy}>{busy ? 'Please wait…' : resetMode ? 'Reset password' : 'Send reset link'} <ArrowRight size={16} /></button>}
+        </form>
+        <p className="auth-switch"><button onClick={onBack}>Return to sign in</button></p>
       </main>
     </div>
   )

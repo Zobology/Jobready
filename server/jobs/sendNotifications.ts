@@ -50,6 +50,14 @@ function templateFor(notification: NotificationRow) {
         subject: 'Welcome to Zobology — You’re One Step Closer to Your Goals',
         html: layout(`<p>Hi ${fullName},</p><p><strong>You’re one step closer to achieving your career goals!</strong></p><p>Your Zobology Job Readiness Assessment is now ready.</p><p>This assessment is designed to help you understand:</p><ul><li>Where you stand today</li><li>What you’re doing well</li><li>Where your improvement opportunities lie</li><li>Which skills you need to strengthen to become job ready</li></ul><p>There are no right or wrong career journeys—the goal is to give you an honest, personalized view of your current readiness and help you identify what to work on next.</p><p><strong>Ready to discover where you stand?</strong></p>${button('Start my Assessment', `${appUrl}/assessment`)}<p>Take the assessment seriously, be yourself, and don’t worry about getting everything right. Your results are the starting point for your growth journey.</p><p>Once you complete it, we’ll help you understand your results and identify the next steps to become more confident, capable, and job ready.</p><p><strong>Your goal. Your potential. Your journey.<br>Let’s get you job ready.</strong></p>${signature()}`),
       }
+    case 'password_reset': {
+      const token = notification.payload?.token ?? ''
+      const resetUrl = `${appUrl}/reset-password?token=${encodeURIComponent(token)}`
+      return {
+        subject: 'Reset Your Zobology Password',
+        html: layout(`<p>Hi ${firstName},</p><p>We received a request to reset the password for your Zobology account.</p>${button('Reset my password', resetUrl)}<p>This link will expire in 60 minutes and can only be used once.</p><p>If you did not request a password reset, you can safely ignore this email. Your current password will remain unchanged.</p>${signature()}`),
+      }
+    }
     case 'assessment_submitted':
       return {
         subject: 'Assessment Received — Now Wait for the Evaluation',

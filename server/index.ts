@@ -1,4 +1,5 @@
 import path from 'node:path'
+import { createHash, randomBytes } from 'node:crypto'
 import { fileURLToPath } from 'node:url'
 import bcrypt from 'bcryptjs'
 import cookieParser from 'cookie-parser'
@@ -42,6 +43,7 @@ app.use((request, response, next) => {
 })
 
 const authLimit = rateLimit({ windowMs: 15 * 60_000, limit: 20, standardHeaders: true, legacyHeaders: false })
+const passwordResetLimit = rateLimit({ windowMs: 15 * 60_000, limit: 5, standardHeaders: true, legacyHeaders: false })
 const dataDownloadLimit = rateLimit({ windowMs: 60_000, limit: 30, standardHeaders: true, legacyHeaders: false })
 const credentialsSchema = z.object({ email: z.string().email().max(254), password: z.string().min(8).max(128) })
 const publicUser = (user: AuthenticatedUser) => ({
@@ -58,6 +60,7 @@ const linkedinProfileSchema = z.string().trim().url().max(500).refine((value) =>
 const signupBaseSchema = credentialsSchema.extend({
   firstName: z.string().trim().min(1).max(80),
   lastName: z.string().trim().min(1).max(80),
+  confirmPassword: z.string().min(8).max(128),
 })
 const signupSchema = z.discriminatedUnion('role', [
   signupBaseSchema.extend({ role: z.literal('candidate') }),
@@ -67,7 +70,9 @@ const signupSchema = z.discriminatedUnion('role', [
     roleIds: z.array(z.string()).min(1).max(5),
     industryIds: z.array(z.string()).min(1).max(5),
   }),
-])
+]).superRefine((input, context) => {
+  if (input.password !== input.confirmPassword) context.addIssue({ code: 'custom', path: ['confirmPassword'], message: 'The passwords do not match' })
+})
 
 app.get('/api/health', async (_request, response, next) => {
   try {
@@ -143,6 +148,66 @@ app.post('/api/auth/signin', authLimit, async (request, response, next) => {
     if (!user || !await bcrypt.compare(input.password, user.password_hash)) return response.status(401).json({ error: 'Email or password is incorrect' })
     await createSession(user.id, response)
     response.json({ state: await loadPortalState(user), user: publicUser(user) })
+  } catch (error) { next(error) }
+})
+
+const resetRequestSchema = z.object({ email: z.string().email().max(254) })
+const resetPasswordSchema = z.object({
+  token: z.string().min(20).max(500),
+  password: z.string().min(8).max(128),
+})
+const hashResetToken = (token: string) => createHash('sha256').update(token).digest('hex')
+
+app.post('/api/auth/forgot-password', passwordResetLimit, async (request, response, next) => {
+  try {
+    const input = resetRequestSchema.parse(request.body)
+    const user = (await pool.query<{ id: string }>(
+      `select id from users where email=$1 and role in ('candidate','reviewer')`,
+      [input.email.toLowerCase()],
+    )).rows[0]
+    if (user) {
+      const token = randomBytes(32).toString('base64url')
+      await transaction(async (client) => {
+        await client.query('update password_reset_tokens set used_at=now() where user_id=$1 and used_at is null', [user.id])
+        await client.query(
+          `insert into password_reset_tokens(user_id,token_hash,expires_at) values($1,$2,now()+interval '60 minutes')`,
+          [user.id, hashResetToken(token)],
+        )
+        await client.query(
+          `insert into notification_outbox(recipient_id,event_type,payload)
+           values($1,'password_reset',jsonb_build_object('token',$2::text,'subject','Reset your Zobology password'))`,
+          [user.id, token],
+        )
+      })
+    }
+    response.status(202).json({ message: 'If an eligible account exists for this email, a reset link will be sent shortly.' })
+  } catch (error) { next(error) }
+})
+
+app.post('/api/auth/reset-password', passwordResetLimit, async (request, response, next) => {
+  try {
+    const input = resetPasswordSchema.parse(request.body)
+    const passwordHash = await bcrypt.hash(input.password, 12)
+    const reset = await transaction(async (client) => {
+      const record = (await client.query<{ id: string; user_id: string }>(
+        `select id,user_id from password_reset_tokens
+         where token_hash=$1 and used_at is null and expires_at > now()
+         for update`,
+        [hashResetToken(input.token)],
+      )).rows[0]
+      if (!record) return false
+      await client.query('update users set password_hash=$1,updated_at=now() where id=$2', [passwordHash, record.user_id])
+      await client.query('update password_reset_tokens set used_at=now() where user_id=$1 and used_at is null', [record.user_id])
+      await client.query('delete from user_sessions where user_id=$1', [record.user_id])
+      await client.query(
+        `insert into audit_log(action,entity_type,entity_id,metadata)
+         values('password_reset_completed','user',$1,jsonb_build_object('reset_token_id',$2::uuid))`,
+        [record.user_id, record.id],
+      )
+      return true
+    })
+    if (!reset) return response.status(400).json({ error: 'This password reset link is invalid or has expired.' })
+    response.status(204).end()
   } catch (error) { next(error) }
 })
 

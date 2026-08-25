@@ -25,11 +25,17 @@ export const api = {
     if (!response.ok) throw new Error(payload.error || 'Unable to load your account')
     return payload
   },
-  signup(input: { firstName: string; lastName: string; email: string; password: string; role: 'candidate' | 'reviewer'; linkedinProfile?: string; roleIds?: string[]; industryIds?: string[] }) {
+  signup(input: { firstName: string; lastName: string; email: string; password: string; confirmPassword: string; role: 'candidate' | 'reviewer'; linkedinProfile?: string; roleIds?: string[]; industryIds?: string[] }) {
     return request<StateResponse>('/auth/signup', { method: 'POST', body: JSON.stringify(input) })
   },
   signin(email: string, password: string) {
     return request<StateResponse>('/auth/signin', { method: 'POST', body: JSON.stringify({ email, password }) })
+  },
+  forgotPassword(email: string) {
+    return request<{ message: string }>('/auth/forgot-password', { method: 'POST', body: JSON.stringify({ email }) })
+  },
+  resetPassword(token: string, password: string) {
+    return request<void>('/auth/reset-password', { method: 'POST', body: JSON.stringify({ token, password }) })
   },
   signout() { return request<void>('/auth/signout', { method: 'POST' }) },
   saveProfile(profile: Record<string, unknown>) { return request<void>('/candidate/profile', { method: 'PUT', body: JSON.stringify(profile) }) },
