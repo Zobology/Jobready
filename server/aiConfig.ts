@@ -47,7 +47,7 @@ export async function runReviewProviderFallback<T>(
   const providerErrors: string[] = []
   for (const provider of configuredProviders) {
     try {
-      return { provider, result: await request(provider), failedProviders }
+      return { provider, result: await request(provider), failedProviders, providerErrors }
     } catch (error) {
       failedProviders.push(provider.modelId)
       providerErrors.push(`${provider.modelId}: ${(error as Error).message}`)

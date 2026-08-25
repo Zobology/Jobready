@@ -154,12 +154,32 @@ function anthropicResponseText(payload: Record<string, unknown>) {
   throw new Error('Claude review returned no structured output')
 }
 
+function parseJsonResponse(text: string) {
+  const trimmed = text.trim()
+  const unfenced = trimmed.startsWith('```')
+    ? trimmed.replace(/^```(?:json)?\s*/i, '').replace(/\s*```$/, '')
+    : trimmed
+  const start = unfenced.indexOf('{')
+  const end = unfenced.lastIndexOf('}')
+  if (start < 0 || end < start) throw new Error('Claude review returned invalid JSON')
+  return JSON.parse(unfenced.slice(start, end + 1)) as unknown
+}
+
+function supportsAnthropicStructuredOutput(model: string) {
+  // Claude Opus 5 does not currently support output_config.format.
+  return model !== 'claude-opus-5'
+}
+
 interface ProviderResult {
   responseId: string
   result: z.infer<typeof aiOutputSchema>
 }
 
 async function requestClaude(config: ReviewProviderConfig, instructions: string, input: string): Promise<ProviderResult> {
+  const useStructuredOutput = supportsAnthropicStructuredOutput(config.model)
+  const jsonInstructions = useStructuredOutput
+    ? instructions
+    : `${instructions}\n\nReturn only a valid JSON object matching this JSON Schema, without Markdown fences or explanatory text:\n${JSON.stringify(structuredSchema())}`
   const response = await fetch('https://api.anthropic.com/v1/messages', {
     method: 'POST',
     headers: {
@@ -170,9 +190,9 @@ async function requestClaude(config: ReviewProviderConfig, instructions: string,
     body: JSON.stringify({
       model: config.model,
       max_tokens: 20_000,
-      system: instructions,
+      system: jsonInstructions,
       messages: [{ role: 'user', content: input }],
-      output_config: { format: { type: 'json_schema', schema: structuredSchema() } },
+      ...(useStructuredOutput ? { output_config: { format: { type: 'json_schema', schema: structuredSchema() } } } : {}),
     }),
     signal: AbortSignal.timeout(300_000),
   })
@@ -180,7 +200,7 @@ async function requestClaude(config: ReviewProviderConfig, instructions: string,
   const payload = await response.json() as Record<string, unknown>
   return {
     responseId: String(payload.id ?? ''),
-    result: aiOutputSchema.parse(JSON.parse(anthropicResponseText(payload))),
+    result: aiOutputSchema.parse(parseJsonResponse(anthropicResponseText(payload))),
   }
 }
 
@@ -291,6 +311,7 @@ Rules:\n- Return every question and every rubric criterion exactly once.\n- Do n
     provider: evaluation.provider.provider,
     responseId,
     fallbackFrom: evaluation.failedProviders,
+    fallbackErrors: evaluation.providerErrors,
     rubricScores,
     requiresHuman,
     enhancedAnswers,
@@ -332,9 +353,9 @@ async function routeAfterAiReview(assessment: AssessmentRow, draft: Awaited<Retu
   await transaction(async (client) => {
     await client.query(
       `update assessments set ai_review_status='completed',ai_review=$1,ai_model=$2,ai_reviewed_at=now(),ai_review_error=null,answers=$3 where id=$4`,
-      [JSON.stringify({ rubricScores: draft.rubricScores, requiresHuman: draft.requiresHuman, responseId: draft.responseId, provider: draft.provider, fallbackFrom: draft.fallbackFrom }), draft.model, JSON.stringify(draft.enhancedAnswers), assessment.id],
+      [JSON.stringify({ rubricScores: draft.rubricScores, requiresHuman: draft.requiresHuman, responseId: draft.responseId, provider: draft.provider, fallbackFrom: draft.fallbackFrom, fallbackErrors: draft.fallbackErrors }), draft.model, JSON.stringify(draft.enhancedAnswers), assessment.id],
     )
-    await client.query(`insert into audit_log(action,entity_type,entity_id,metadata) values('ai_review_completed','assessment',$1,jsonb_build_object('model',$2::text,'provider',$3::text,'response_id',$4::text,'requires_human',$5::boolean,'fallback_from',$6::jsonb))`, [assessment.id, draft.model, draft.provider, draft.responseId, draft.requiresHuman, JSON.stringify(draft.fallbackFrom)])
+    await client.query(`insert into audit_log(action,entity_type,entity_id,metadata) values('ai_review_completed','assessment',$1,jsonb_build_object('model',$2::text,'provider',$3::text,'response_id',$4::text,'requires_human',$5::boolean,'fallback_from',$6::jsonb,'fallback_errors',$7::jsonb))`, [assessment.id, draft.model, draft.provider, draft.responseId, draft.requiresHuman, JSON.stringify(draft.fallbackFrom), JSON.stringify(draft.fallbackErrors)])
     const governance = await calibrationSummary(client)
     if (governance.mode === 'ai_only' && governance.eligible && governance.model === draft.model && !draft.requiresHuman) {
       const finalAnswers = scoreAnswers(assessment.questions, draft.enhancedAnswers, draft.rubricScores)

@@ -14,6 +14,7 @@ test('uses the primary provider without calling the fallback', async () => {
   assert.equal(result.provider.provider, 'anthropic')
   assert.equal(result.result, 'primary-result')
   assert.deepEqual(result.failedProviders, [])
+  assert.deepEqual(result.providerErrors, [])
   assert.deepEqual(called, ['anthropic'])
 })
 
@@ -27,6 +28,7 @@ test('falls back to OpenAI when Claude fails', async () => {
   assert.equal(result.provider.provider, 'openai')
   assert.equal(result.result, 'fallback-result')
   assert.deepEqual(result.failedProviders, ['anthropic/claude-test'])
+  assert.match(result.providerErrors[0], /Claude unavailable/)
   assert.deepEqual(called, ['anthropic', 'openai'])
 })
 
