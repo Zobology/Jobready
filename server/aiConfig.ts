@@ -15,8 +15,8 @@ export function reviewProviderConfigs(): ReviewProviderConfig[] {
   const providers: Record<ReviewProvider, ReviewProviderConfig> = {
     anthropic: {
       provider: 'anthropic',
-      model: process.env.ANTHROPIC_REVIEW_MODEL ?? 'claude-sonnet-5',
-      modelId: `anthropic/${process.env.ANTHROPIC_REVIEW_MODEL ?? 'claude-sonnet-5'}`,
+      model: process.env.ANTHROPIC_REVIEW_MODEL ?? 'claude-opus-5',
+      modelId: `anthropic/${process.env.ANTHROPIC_REVIEW_MODEL ?? 'claude-opus-5'}`,
       apiKey: process.env.ANTHROPIC_API_KEY,
     },
     openai: {

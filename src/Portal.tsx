@@ -540,7 +540,7 @@ export default function Portal() {
 }
 
 function emptyPortalDatabase(): PortalDatabase {
-  return { accounts: [], reviewers: [], submissions: [], reviews: [], notifications: [], aiGovernance: { mode: 'human_required', model: 'gpt-5.6-terra', minimumReviews: 100, maximumMae: 0.35, minimumExactAgreement: 0.75, reviews: 0, criteria: 0, mae: 0, exactAgreement: 0, eligible: false } }
+  return { accounts: [], reviewers: [], submissions: [], reviews: [], notifications: [], aiGovernance: { mode: 'human_required', model: 'anthropic/claude-opus-5', minimumReviews: 100, maximumMae: 0.35, minimumExactAgreement: 0.75, reviews: 0, criteria: 0, mae: 0, exactAgreement: 0, eligible: false } }
 }
 
 function Brand() {
