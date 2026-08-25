@@ -611,6 +611,7 @@ function AuthScreen({
   const [lastName, setLastName] = useState('')
   const [linkedinProfile, setLinkedinProfile] = useState('')
   const [mentorResume, setMentorResume] = useState<File | null>(null)
+  const [showLinkedinHelp, setShowLinkedinHelp] = useState(false)
   const [registeredResult, setRegisteredResult] = useState<Awaited<ReturnType<typeof api.signup>> | null>(null)
   const [roleIds, setRoleIds] = useState<string[]>([])
   const [industryIds, setIndustryIds] = useState<string[]>([])
@@ -727,18 +728,37 @@ function AuthScreen({
           {signInMode && <button type="button" className="forgot-password-link" onClick={() => onSwitch('forgot-password')}>Forgot password?</button>}
           {reviewerMode && (
             <>
-              <label className="field"><span>LinkedIn profile <small>Required</small></span><input type="url" value={linkedinProfile} onChange={(event) => setLinkedinProfile(event.target.value)} placeholder="https://www.linkedin.com/in/your-profile" autoComplete="url" maxLength={500} /></label>
+              <label className="field linkedin-field"><span>LinkedIn profile <small>Required</small></span><input type="url" value={linkedinProfile} onChange={(event) => setLinkedinProfile(event.target.value)} placeholder="https://www.linkedin.com/in/your-profile" autoComplete="url" maxLength={500} /><button type="button" className="linkedin-help-trigger" onClick={() => setShowLinkedinHelp(true)}>How do I find my LinkedIn URL?</button></label>
               <label className="field file-field"><span>Résumé <small>Optional · PDF, DOC or DOCX · max 25 MB</small></span><input type="file" accept=".pdf,.doc,.docx,application/pdf,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document" onChange={(event) => setMentorResume(event.target.files?.[0] ?? null)} /></label>
               <MultiSelect label="Roles you can assess" hint={`${roleIds.length}/5 selected`} options={roles.map((item) => ({ id: item.id, label: item.name }))} selected={roleIds} onToggle={(id) => toggle(roleIds, id, setRoleIds)} />
               <MultiSelect label="Industries you know" hint={`${industryIds.length}/5 selected`} options={industries.map((item) => ({ id: item.id, label: item.name }))} selected={industryIds} onToggle={(id) => toggle(industryIds, id, setIndustryIds)} />
             </>
           )}
+          {showLinkedinHelp && <LinkedinHelpDialog onClose={() => setShowLinkedinHelp(false)} />}
           {error && <p className="auth-error">{error}</p>}
           <button className="primary-button" disabled={busy}>{busy ? 'Please wait…' : signInMode ? 'Sign in' : reviewerMode ? 'Submit application' : 'Create account'} <ArrowRight size={16} /></button>
         </form>
         <p className="auth-switch">{signInMode ? <>New to Zobology? <button onClick={() => onSwitch('signup')}>Create an account</button></> : <>Already have an account? <button onClick={() => onSwitch('signin')}>Sign in</button></>}</p>
         {signInMode && !backendEnabled && <div className="demo-access"><strong>Preview accounts</strong><span>Admin: admin@zobology.in / Admin@123</span><span>Mentor: expert1@zobology.in / Mentor@123</span></div>}
       </main>
+    </div>
+  )
+}
+
+function LinkedinHelpDialog({ onClose }: { onClose: () => void }) {
+  return (
+    <div className="help-dialog-backdrop" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget) onClose() }}>
+      <section className="help-dialog" role="dialog" aria-modal="true" aria-labelledby="linkedin-help-title">
+        <button type="button" className="help-dialog-close" onClick={onClose} aria-label="Close LinkedIn URL help"><X size={18} /></button>
+        <span className="help-dialog-icon">in</span>
+        <h3 id="linkedin-help-title">How to find your LinkedIn profile URL</h3>
+        <div className="help-dialog-steps">
+          <p><b>1</b><span><strong>Open your LinkedIn profile</strong>Sign in to LinkedIn, select your profile picture, then choose <em>View Profile</em>.</span></p>
+          <p><b>2</b><span><strong>Copy the profile address</strong>On desktop, copy the URL from your browser’s address bar. In the app, use <em>Share profile → Copy link</em>.</span></p>
+          <p><b>3</b><span><strong>Paste it into this field</strong>Your link should look like <code>https://www.linkedin.com/in/your-name</code>.</span></p>
+        </div>
+        <button type="button" className="primary-button compact" onClick={onClose}>Got it</button>
+      </section>
     </div>
   )
 }

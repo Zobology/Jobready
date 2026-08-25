@@ -88,7 +88,7 @@ export const roles: RoleFamily[] = masterRoles.map((role) => ({
   description: role.directive,
   competencies: [...role.competencies],
   ...roleWeights(role.name),
-}))
+})).sort((left, right) => left.name.localeCompare(right.name, 'en', { sensitivity: 'base' }))
 
 export const industries: Industry[] = masterIndustries.map((industry) => ({
   id: `industry-${industry.id}`,
@@ -97,7 +97,7 @@ export const industries: Industry[] = masterIndustries.map((industry) => ({
   description: `Business context covering ${industry.focus}.`,
   contexts: [...industry.contexts],
   focus: industry.focus,
-}))
+})).sort((left, right) => left.name.localeCompare(right.name, 'en', { sensitivity: 'base' }))
 
 type AssessmentProfile = Pick<CandidateProfile, 'education' | 'experienceType' | 'experienceYears' | 'level' | 'resumeName' | 'resumeSignals'>
 type TargetBand = 'entry' | 'associate' | 'mid' | 'senior'
