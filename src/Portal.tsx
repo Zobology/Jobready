@@ -20,7 +20,7 @@ import {
 import { Assessment, ProfileBuilder, Results } from './App'
 import { api, backendEnabled } from './api'
 import { ReviewWorkspace } from './HumanReview'
-import { buildAssessment, industries, roles } from './data'
+import { buildAssessment, educationOptions, industries, levelOptions, roles, type Dimension } from './data'
 import type { AssessmentAnswer, CandidateProfile, HumanReview } from './reviewTypes'
 import {
   assignSubmission,
@@ -37,7 +37,7 @@ import type { AssignedReview, PortalAccount, PortalDatabase, PortalSubmission, R
 type PublicView = 'landing' | 'signin' | 'signup' | 'reviewer-signup' | 'forgot-password' | 'reset-password'
 type CandidateView = 'dashboard' | 'profile' | 'assessment' | 'waiting' | 'results'
 type ReviewerView = 'queue' | 'review' | 'evaluation'
-type AdminView = 'dashboard' | 'reviewers' | 'candidates' | 'assessments' | 'adjudication' | 'ai-calibration'
+type AdminView = 'dashboard' | 'reviewers' | 'candidates' | 'assessments' | 'question-preview' | 'adjudication' | 'ai-calibration'
 
 const initialProfile: CandidateProfile = {
   name: '',
@@ -462,7 +462,7 @@ export default function Portal() {
       : [{ id: 'profile', label: 'Assessment' }]
     : account.role === 'reviewer'
       ? [{ id: 'queue', label: 'Assessment queue' }]
-      : [{ id: 'dashboard', label: 'Overview' }, { id: 'reviewers', label: 'Mentors' }, { id: 'candidates', label: 'Candidates' }, { id: 'assessments', label: 'Assessments' }, { id: 'ai-calibration', label: 'AI Calibration' }, { id: 'adjudication', label: 'Adjudication' }]
+      : [{ id: 'dashboard', label: 'Overview' }, { id: 'question-preview', label: 'Question Preview' }, { id: 'reviewers', label: 'Mentors' }, { id: 'candidates', label: 'Candidates' }, { id: 'assessments', label: 'Assessments' }, { id: 'ai-calibration', label: 'AI Calibration' }, { id: 'adjudication', label: 'Adjudication' }]
 
   return (
     <div className="portal-shell">
@@ -963,6 +963,7 @@ function AdminPanel({ view, database, onView, onUpdate, onReviewerDecision, onPu
     reviewers: { title: 'Mentor registrations', description: 'Approve mentor profiles before they can receive matching review opportunities.' },
     candidates: { title: 'Candidate registrations', description: 'Track every registered candidate and whether their assessment is pending or completed.' },
     assessments: { title: 'Assessments with mentors', description: 'Monitor matching, acceptance, and scoring progress for submitted assessments.' },
+    'question-preview': { title: 'Question preview', description: 'Generate and inspect the exact assessment candidates receive for any target profile.' },
     adjudication: { title: 'Score adjudication', description: 'Resolve independently completed mentor reviews and publish the final result.' },
     'ai-calibration': { title: 'AI calibration governance', description: 'Measure AI–mentor agreement and control when automated publication becomes eligible.' },
   }
@@ -1002,12 +1003,75 @@ function AdminPanel({ view, database, onView, onUpdate, onReviewerDecision, onPu
 
   return (
     <div className="admin-page"><div className="workspace-heading"><div><div className="eyebrow"><span /> Admin control centre</div><h1>{headings[view].title}</h1><p>{headings[view].description}</p></div></div>
-      {view === 'dashboard' && <><div className="admin-metrics"><Metric label="Registered mentors" value={database.reviewers.length} icon={<UserCheck />} /><Metric label="Registered candidates" value={candidates.length} icon={<Users />} /><Metric label="Pending mentor approvals" value={pendingReviewers.length} icon={<Clock3 />} alert={pendingReviewers.length > 0} /><Metric label="With mentors" value={pendingAssessments.length} icon={<ClipboardCheck />} alert={pendingAssessments.length > 0} /></div><div className="admin-actions"><button onClick={() => onView('reviewers')}><UserCheck /><span><b>Mentor registrations</b><small>{pendingReviewers.length} awaiting an approval decision</small></span><ArrowRight /></button><button onClick={() => onView('candidates')}><Users /><span><b>Candidate registrations</b><small>{candidates.length} candidates · assessment status tracking</small></span><ArrowRight /></button><button onClick={() => onView('assessments')}><ClipboardCheck /><span><b>Assessments with mentors</b><small>{pendingAssessments.length} currently awaiting or under review</small></span><ArrowRight /></button><button onClick={() => onView('ai-calibration')}><Bot /><span><b>AI calibration</b><small>{database.aiGovernance.reviews}/{database.aiGovernance.minimumReviews} mentor-validated reviews · {Math.round(database.aiGovernance.exactAgreement * 100)}% exact agreement</small></span><ArrowRight /></button><button onClick={() => onView('adjudication')}><ScaleIcon /><span><b>Resolve dual reviews</b><small>{adjudications.length} assessments need a final decision</small></span><ArrowRight /></button></div></>}
+      {view === 'dashboard' && <><div className="admin-metrics"><Metric label="Registered mentors" value={database.reviewers.length} icon={<UserCheck />} /><Metric label="Registered candidates" value={candidates.length} icon={<Users />} /><Metric label="Pending mentor approvals" value={pendingReviewers.length} icon={<Clock3 />} alert={pendingReviewers.length > 0} /><Metric label="With mentors" value={pendingAssessments.length} icon={<ClipboardCheck />} alert={pendingAssessments.length > 0} /></div><div className="admin-actions"><button onClick={() => onView('question-preview')}><Target /><span><b>Preview assessment questions</b><small>Check questions for any role, industry, education, and experience profile</small></span><ArrowRight /></button><button onClick={() => onView('reviewers')}><UserCheck /><span><b>Mentor registrations</b><small>{pendingReviewers.length} awaiting an approval decision</small></span><ArrowRight /></button><button onClick={() => onView('candidates')}><Users /><span><b>Candidate registrations</b><small>{candidates.length} candidates · assessment status tracking</small></span><ArrowRight /></button><button onClick={() => onView('assessments')}><ClipboardCheck /><span><b>Assessments with mentors</b><small>{pendingAssessments.length} currently awaiting or under review</small></span><ArrowRight /></button><button onClick={() => onView('ai-calibration')}><Bot /><span><b>AI calibration</b><small>{database.aiGovernance.reviews}/{database.aiGovernance.minimumReviews} mentor-validated reviews · {Math.round(database.aiGovernance.exactAgreement * 100)}% exact agreement</small></span><ArrowRight /></button><button onClick={() => onView('adjudication')}><ScaleIcon /><span><b>Resolve dual reviews</b><small>{adjudications.length} assessments need a final decision</small></span><ArrowRight /></button></div></>}
+      {view === 'question-preview' && <AdminQuestionPreview />}
       {view === 'reviewers' && <ReviewerApprovals database={database} onDecision={approveReviewer} />}
       {view === 'candidates' && <CandidateRegistrations database={database} />}
       {view === 'assessments' && <PendingAssessments database={database} />}
       {view === 'ai-calibration' && <AiCalibrationPanel database={database} onUpdate={onAiGovernance} />}
       {view === 'adjudication' && <AdjudicationQueue database={database} onPublish={publish} />}
+    </div>
+  )
+}
+
+function AdminQuestionPreview() {
+  const [roleId, setRoleId] = useState(roles[0].id)
+  const [industryId, setIndustryId] = useState(industries[0].id)
+  const [education, setEducation] = useState(educationOptions[0])
+  const [experienceType, setExperienceType] = useState<'fresher' | 'experienced'>('fresher')
+  const [experienceYears, setExperienceYears] = useState('2')
+  const [level, setLevel] = useState(levelOptions[0])
+  const [section, setSection] = useState<'all' | Dimension>('all')
+  const role = roles.find((item) => item.id === roleId) ?? roles[0]
+  const industry = industries.find((item) => item.id === industryId) ?? industries[0]
+  const questions = useMemo(() => buildAssessment(role, industry, {
+    education,
+    experienceType,
+    experienceYears: experienceType === 'experienced' ? experienceYears : '',
+    level,
+    resumeName: '',
+    resumeSignals: [],
+  }), [role, industry, education, experienceType, experienceYears, level])
+  const displayedQuestions = section === 'all' ? questions : questions.filter((question) => question.dimension === section)
+  const sectionNames: Record<Dimension, string> = { core: 'Core', role: 'Role', industry: 'Industry', simulation: 'Simulation' }
+
+  return (
+    <div className="admin-question-preview">
+      <aside className="question-preview-controls">
+        <div><span className="section-label">Candidate parameters</span><h2>Build a test profile</h2><p>Changes regenerate the assessment immediately. No candidate record or submission is created.</p></div>
+        <label><span>Target role</span><select value={roleId} onChange={(event) => setRoleId(event.target.value)}>{roles.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}</select></label>
+        <label><span>Target industry</span><select value={industryId} onChange={(event) => setIndustryId(event.target.value)}>{industries.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}</select></label>
+        <label><span>Education</span><select value={education} onChange={(event) => setEducation(event.target.value)}>{educationOptions.map((item) => <option key={item}>{item}</option>)}</select></label>
+        <fieldset><legend>Experience</legend><div className="question-preview-choice"><button className={experienceType === 'fresher' ? 'active' : ''} onClick={() => setExperienceType('fresher')}>Fresher</button><button className={experienceType === 'experienced' ? 'active' : ''} onClick={() => setExperienceType('experienced')}>Experienced</button></div></fieldset>
+        {experienceType === 'experienced' && <label><span>Years of experience</span><input type="number" min="1" max="40" step="0.5" value={experienceYears} onChange={(event) => setExperienceYears(event.target.value)} /></label>}
+        <label><span>Target level</span><select value={level} onChange={(event) => setLevel(event.target.value)}>{levelOptions.map((item) => <option key={item}>{item}</option>)}</select></label>
+        <div className="question-preview-summary"><strong>{questions.length} questions generated</strong><span>{role.name}</span><span>{industry.name} · {level}</span><span>{education} · {experienceType === 'fresher' ? 'Fresher' : `${experienceYears || '0'} years`}</span></div>
+      </aside>
+
+      <section className="question-preview-results">
+        <div className="question-preview-toolbar">
+          <div><span className="section-label">Generated assessment</span><h2>Review question fit</h2><p>Inspect context, task, response format, guidance, and scoring criteria. Candidate answer controls are intentionally disabled in this view.</p></div>
+          <div className="question-preview-tabs">
+            <button className={section === 'all' ? 'active' : ''} onClick={() => setSection('all')}>All <i>{questions.length}</i></button>
+            {(Object.keys(sectionNames) as Dimension[]).map((dimension) => {
+              const count = questions.filter((question) => question.dimension === dimension).length
+              return <button key={dimension} className={section === dimension ? 'active' : ''} onClick={() => setSection(dimension)}>{sectionNames[dimension]} <i>{count}</i></button>
+            })}
+          </div>
+        </div>
+        <div className="question-preview-list">
+          {displayedQuestions.map((question) => {
+            const number = questions.findIndex((item) => item.id === question.id) + 1
+            return <article key={question.id} className="question-preview-card">
+              <div className="question-preview-card-head"><span>Question {number}</span><em className={`dimension-chip ${question.dimension}`}>{sectionNames[question.dimension]}</em><small>{question.competency}</small><i>{question.responseType === 'audio' ? 'Audio response' : 'Written response'}</i></div>
+              {question.scenario && <div className="question-preview-scenario"><b>Scenario</b><p>{question.scenario}</p></div>}
+              <div className="question-preview-task"><b>Candidate task</b><h3>{question.task ?? question.prompt}</h3></div>
+              <div className="question-preview-guidance"><span><b>Answer guidance</b>{question.guidance}</span><span><b>Proficiency</b>{question.proficiency.replace('_', ' ')}</span>{question.sampleData && <span><b>Work sample</b>Excel dataset + workbook upload</span>}</div>
+              <div className="question-preview-rubric"><b>Scoring criteria</b><p>{question.rubric.map((criterion) => <span key={criterion}>{criterion}</span>)}</p></div>
+            </article>
+          })}
+        </div>
+      </section>
     </div>
   )
 }
