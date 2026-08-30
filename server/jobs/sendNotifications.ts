@@ -1,4 +1,5 @@
 import { pool } from '../db.js'
+import { expireOverdueMentorReviews } from '../reviewExpiry.js'
 
 const apiKey = process.env.RESEND_API_KEY
 const from = process.env.EMAIL_FROM ?? 'Zobology <noreply@zobology.in>'
@@ -91,6 +92,8 @@ function templateFor(notification: NotificationRow) {
 }
 
 async function run() {
+  const expiredReviews = await expireOverdueMentorReviews()
+  if (expiredReviews) console.log(`Moved ${expiredReviews} overdue mentor review(s) to the admin queue`)
   await pool.query('delete from user_sessions where expires_at < now()')
   const pending = await pool.query<NotificationRow>(
     `select n.id, u.email::text, u.first_name, u.last_name, n.event_type, n.payload,

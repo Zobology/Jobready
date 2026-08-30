@@ -16,6 +16,7 @@ import { readFile, storageConfigured, uploadFile } from './storage.js'
 import { extractResumeSignals } from './resume.js'
 import { buildSampleWorkbook, type DataVariant } from './sampleData.js'
 import { calibrationSummary, processAssessmentAiReview, processPendingAiReviews, recordHumanCalibration, type RubricScores } from './aiReview.js'
+import { expireOverdueMentorReviews } from './reviewExpiry.js'
 
 const app = express()
 const port = Number(process.env.PORT ?? 10000)
@@ -216,7 +217,10 @@ app.post('/api/auth/signout', requireUser, async (request, response, next) => {
 })
 
 app.get('/api/state', requireUser, async (request, response, next) => {
-  try { response.json({ state: await loadPortalState(request.user!), user: publicUser(request.user!) }) } catch (error) { next(error) }
+  try {
+    await expireOverdueMentorReviews()
+    response.json({ state: await loadPortalState(request.user!), user: publicUser(request.user!) })
+  } catch (error) { next(error) }
 })
 
 const profileSchema = z.object({
@@ -339,6 +343,7 @@ const reviewSchema = z.object({ questionReviews: z.record(z.string(), z.unknown(
 
 app.post('/api/reviewer/reviews/:id/decision', requireRole('reviewer'), async (request, response, next) => {
   try {
+    await expireOverdueMentorReviews()
     const decision = z.enum(['accept', 'decline']).parse(request.body.decision)
     await transaction(async (client) => {
       const assignment = (await client.query<{ id: string; assessment_id: string; status: string; ai_review_status: string }>(
@@ -373,7 +378,7 @@ app.post('/api/reviewer/reviews/:id/decision', requireRole('reviewer'), async (r
         throw Object.assign(new Error('Two mentors have already accepted this assessment'), { status: 409 })
       }
 
-      await client.query(`update review_assignments set status = 'accepted' where id = $1`, [assignment.id])
+      await client.query(`update review_assignments set status='accepted',accepted_at=now() where id=$1`, [assignment.id])
       await client.query(`update assessments set status = 'under_review' where id = $1 and status = 'awaiting_review'`, [assignment.assessment_id])
       const accepted = await client.query<{ count: string }>(
         `select count(*) from review_assignments
@@ -399,6 +404,7 @@ app.post('/api/reviewer/reviews/:id/decision', requireRole('reviewer'), async (r
 
 app.put('/api/reviewer/reviews/:id', requireRole('reviewer'), async (request, response, next) => {
   try {
+    await expireOverdueMentorReviews()
     const input = reviewSchema.parse(request.body)
     await transaction(async (client) => {
       if (input.status === 'completed') {
@@ -496,18 +502,33 @@ app.post('/api/admin/assessments/:id/review', requireRole('admin'), async (reque
          where assessment_id=$1 and reviewer_id=$2 and review_type='admin'`,
         [assessment.id, request.user!.id],
       )).rows[0]
-      if (existing) return existing.id
-      const inserted = await client.query<{ id: string }>(
-        `insert into review_assignments(assessment_id,reviewer_id,match_score,status,rubric_scores,review_type)
-         values($1,$2,1,'accepted',$3,'admin') returning id`,
-        [assessment.id, request.user!.id, JSON.stringify(assessment.rubric_scores)],
+      let reviewId = existing?.id
+      if (!reviewId) {
+        const inserted = await client.query<{ id: string }>(
+          `insert into review_assignments(assessment_id,reviewer_id,match_score,status,rubric_scores,review_type,accepted_at)
+           values($1,$2,1,'accepted',$3,'admin',now()) returning id`,
+          [assessment.id, request.user!.id, JSON.stringify(assessment.rubric_scores)],
+        )
+        reviewId = inserted.rows[0].id
+        await client.query(
+          `insert into audit_log(actor_id,action,entity_type,entity_id,metadata)
+           values($1,'admin_review_started','assessment',$2,jsonb_build_object('review_id',$3::text))`,
+          [request.user!.id, assessment.id, reviewId],
+        )
+      }
+      const removed = await client.query(
+        `update review_assignments set status='declined'
+         where assessment_id=$1 and review_type='mentor' and status='available'`,
+        [assessment.id],
       )
-      await client.query(
-        `insert into audit_log(actor_id,action,entity_type,entity_id,metadata)
-         values($1,'admin_calibration_review_started','assessment',$2,jsonb_build_object('review_id',$3::text))`,
-        [request.user!.id, assessment.id, inserted.rows[0].id],
-      )
-      return inserted.rows[0].id
+      if (removed.rowCount) {
+        await client.query(
+          `insert into audit_log(actor_id,action,entity_type,entity_id,metadata)
+           values($1,'admin_review_claimed_unaccepted_assessment','assessment',$2,jsonb_build_object('review_id',$3::text,'mentor_opportunities_removed',$4::int))`,
+          [request.user!.id, assessment.id, reviewId, removed.rowCount],
+        )
+      }
+      return reviewId
     })
     response.json({ reviewId, state: await loadPortalState(request.user!), user: publicUser(request.user!) })
   } catch (error) { next(error) }
@@ -552,9 +573,42 @@ app.put('/api/admin/reviews/:id', requireRole('admin'), async (request, response
       }
       if (input.status === 'completed') {
         await recordHumanCalibration(client, updated.rows[0].assessment_id, String(request.params.id), updated.rows[0].rubric_scores)
+        const assessment = (await client.query<{
+          candidate_id: string
+          status: string
+          questions: Array<{ id: string; rubric: string[] }>
+          answers: Record<string, Record<string, unknown>>
+        }>(
+          `select candidate_id,status,questions,answers from assessments where id=$1 for update`,
+          [updated.rows[0].assessment_id],
+        )).rows[0]
+        if (assessment.status !== 'published') {
+          const finalAnswers = scoreReview(assessment.questions, assessment.answers, updated.rows[0].rubric_scores)
+          await client.query(
+            `update assessments
+             set status='published',final_answers=$1,adjudicated_at=now(),adjudicated_by=$2
+             where id=$3`,
+            [JSON.stringify(finalAnswers), request.user!.id, updated.rows[0].assessment_id],
+          )
+          await client.query(
+            `update review_assignments
+             set status=case when status='available' then 'declined' else 'expired' end
+             where assessment_id=$1 and review_type='mentor' and status in ('available','accepted','in_review')`,
+            [updated.rows[0].assessment_id],
+          )
+          await client.query(
+            `insert into notification_outbox(recipient_id,event_type,payload)
+             select $1,'results_ready',jsonb_build_object('assessment_id',$2::uuid,'subject','Your Zobology results are ready')
+             where not exists (
+               select 1 from notification_outbox
+               where event_type='results_ready' and payload->>'assessment_id'=$2
+             )`,
+            [assessment.candidate_id, updated.rows[0].assessment_id],
+          )
+        }
         await client.query(
           `insert into audit_log(actor_id,action,entity_type,entity_id,metadata)
-           values($1,'admin_calibration_review_completed','assessment',$2,jsonb_build_object('review_id',$3::text))`,
+           values($1,'admin_review_completed_and_published','assessment',$2,jsonb_build_object('review_id',$3::text))`,
           [request.user!.id, updated.rows[0].assessment_id, request.params.id],
         )
       }

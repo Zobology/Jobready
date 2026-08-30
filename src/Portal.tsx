@@ -403,8 +403,11 @@ export default function Portal() {
         reviewType: 'admin',
         status: 'accepted',
         questionReviews: submission.aiReview?.rubricScores ?? {},
+        acceptedAt: new Date().toISOString(),
       }
-      updateDatabase({ ...database, reviews: [...database.reviews, review] })
+      const reviews = database.reviews
+        .map((item) => item.submissionId === submission.id && item.reviewType !== 'admin' && item.status === 'available' ? { ...item, status: 'declined' as const } : item)
+      updateDatabase({ ...database, reviews: [...reviews, review] })
     }
     setActiveReviewId(review.id)
     setReviewQuestionIndex(0)
@@ -426,7 +429,21 @@ export default function Portal() {
         return
       }
     } else {
-      updateDatabase({ ...database, reviews: database.reviews.map((item) => item.id === completedReview.id ? completedReview : item) })
+      const reviews = database.reviews.map((item) => {
+        if (item.id === completedReview.id) return completedReview
+        if (item.submissionId !== activeReview.submissionId || item.reviewType === 'admin') return item
+        if (item.status === 'available') return { ...item, status: 'declined' as const }
+        if (['accepted', 'in_review'].includes(item.status)) return { ...item, status: 'expired' as const }
+        return item
+      })
+      const submissions = database.submissions.map((item) => item.id === activeSubmission?.id && item.status !== 'published'
+        ? { ...item, status: 'published' as const, finalAnswers: scoreReview(item, completedReview), adjudicatedAt: new Date().toISOString() }
+        : item)
+      const hasResultNotification = database.notifications.some((item) => item.recipientId === activeSubmission?.candidateId && item.type === 'results_ready')
+      const notifications = activeSubmission && !hasResultNotification
+        ? [...database.notifications, { id: createId('NTF'), recipientId: activeSubmission.candidateId, type: 'results_ready' as const, subject: 'Your Zobology results are ready', createdAt: new Date().toISOString() }]
+        : database.notifications
+      updateDatabase({ ...database, reviews, submissions, notifications })
     }
     setActiveReviewId(null)
     setAdminView('assessments')
@@ -455,7 +472,7 @@ export default function Portal() {
       return
     }
     const newStatus = decision === 'accept' ? 'accepted' as const : 'declined' as const
-    let reviews = database.reviews.map((item) => item.id === reviewId ? { ...item, status: newStatus } : item)
+    let reviews = database.reviews.map((item) => item.id === reviewId ? { ...item, status: newStatus, ...(decision === 'accept' ? { acceptedAt: new Date().toISOString() } : {}) } : item)
     if (decision === 'accept' && activeCount + 1 >= 2) {
       reviews = reviews.map((item) => item.submissionId === selected.submissionId && item.reviewType !== 'admin' && item.status === 'available' ? { ...item, status: 'declined' as const } : item)
     }
@@ -1016,12 +1033,12 @@ function CandidateWaiting({ submission, onBack, onNew }: { submission: PortalSub
 }
 
 function ReviewerDashboard({ account, database, onOpen, onEvaluation, onDecision }: { account: PortalAccount; database: PortalDatabase; onOpen: (reviewId: string) => void; onEvaluation: (reviewId: string) => void; onDecision: (reviewId: string, decision: 'accept' | 'decline') => void }) {
-  const reviews = database.reviews.filter((item) => item.reviewerId === account.id && item.status !== 'declined')
+  const reviews = database.reviews.filter((item) => item.reviewerId === account.id && !['declined', 'expired'].includes(item.status))
   const available = reviews.filter((item) => item.status === 'available')
   const active = reviews.filter((item) => ['accepted', 'in_review'].includes(item.status))
   const completed = reviews.filter((item) => item.status === 'completed')
   return (
-    <div className="workspace-page"><div className="workspace-heading"><div><div className="eyebrow"><span /> Mentor workspace</div><h1>Mentor dashboard</h1><p>Validate AI-drafted assessments against the candidate evidence and job-specific rubric.</p></div><div className="workspace-stats"><Stat icon={<ClipboardCheck />} label="Available" value={available.length} /><Stat icon={<Clock3 />} label="In progress" value={active.length} /><Stat icon={<CheckCircle2 />} label="Completed" value={completed.length} /></div></div><div className="review-type-note"><ClipboardCheck size={18} /><span><strong>AI-assisted assessment reviews</strong><small>Mentor validation required</small></span><div /><Sparkles size={18} /><span><strong>Coaching plan reviews</strong><small>Coming soon</small></span></div><div className="queue-table portal-queue"><div className="queue-table-head"><span>Review</span><span>Target profile</span><span>Received</span><span>Progress</span><span>Status</span><span>Action</span></div>{reviews.length === 0 ? <div className="empty-queue"><ClipboardCheck size={28} /><strong>No reviews available right now</strong><span>AI-drafted matching opportunities will appear here when ready.</span></div> : reviews.map((review) => { const submission = database.submissions.find((item) => item.id === review.submissionId); if (!submission) return null; const progress = Object.values(review.questionReviews).filter((item) => item.validated).length; const accepted = review.status !== 'available'; const total = accepted ? submission.questions.length : 0; return <div className="queue-row" key={review.id}><div className="candidate-cell"><i>{accepted ? submission.profile.name[0] : 'A'}</i><span><strong>AI-assisted review</strong><small>{accepted ? submission.profile.name : 'Candidate details unlock after acceptance'}</small></span></div><div><strong>{submission.role.name}</strong><small>{submission.industry.name} · {submission.profile.level}</small></div><div><strong>{new Date(submission.submittedAt).toLocaleDateString()}</strong><small>Complete within 24 hours of acceptance</small></div><div className="queue-progress"><strong>{accepted ? `${progress}/${total}` : '—'}</strong>{accepted && <span><i style={{ width: `${total ? progress / total * 100 : 0}%` }} /></span>}</div><div><span className={`review-status ${review.status}`}>{review.status.replace('_', ' ')}</span></div>{review.status === 'available' ? <div className="review-opportunity-actions"><button className="decline-review" onClick={() => onDecision(review.id, 'decline')}>Decline</button><button className="accept-review" onClick={() => onDecision(review.id, 'accept')}>Accept</button></div> : review.status === 'completed' ? <button className="review-action evaluation-action" onClick={() => onEvaluation(review.id)}>Evaluation Result <ArrowRight size={14} /></button> : <button className="review-action" onClick={() => onOpen(review.id)}>{progress ? 'Continue' : 'Start'} <ArrowRight size={14} /></button>}</div> })}</div></div>
+    <div className="workspace-page"><div className="workspace-heading"><div><div className="eyebrow"><span /> Mentor workspace</div><h1>Mentor dashboard</h1><p>Validate AI-drafted assessments against the candidate evidence and job-specific rubric.</p></div><div className="workspace-stats"><Stat icon={<ClipboardCheck />} label="Available" value={available.length} /><Stat icon={<Clock3 />} label="In progress" value={active.length} /><Stat icon={<CheckCircle2 />} label="Completed" value={completed.length} /></div></div><div className="review-type-note"><ClipboardCheck size={18} /><span><strong>AI-assisted assessment reviews</strong><small>Mentor validation required</small></span><div /><Sparkles size={18} /><span><strong>Coaching plan reviews</strong><small>Coming soon</small></span></div><div className="queue-table portal-queue"><div className="queue-table-head"><span>Review</span><span>Target profile</span><span>Received</span><span>Progress</span><span>Status</span><span>Action</span></div>{reviews.length === 0 ? <div className="empty-queue"><ClipboardCheck size={28} /><strong>No reviews available right now</strong><span>AI-drafted matching opportunities will appear here when ready.</span></div> : reviews.map((review) => { const submission = database.submissions.find((item) => item.id === review.submissionId); if (!submission) return null; const progress = Object.values(review.questionReviews).filter((item) => item.validated).length; const accepted = review.status !== 'available'; const total = accepted ? submission.questions.length : 0; const deadline = review.acceptedAt ? new Date(new Date(review.acceptedAt).getTime() + 12 * 60 * 60 * 1000) : null; return <div className="queue-row" key={review.id}><div className="candidate-cell"><i>{accepted ? submission.profile.name[0] : 'A'}</i><span><strong>AI-assisted review</strong><small>{accepted ? submission.profile.name : 'Candidate details unlock after acceptance'}</small></span></div><div><strong>{submission.role.name}</strong><small>{submission.industry.name} · {submission.profile.level}</small></div><div><strong>{new Date(submission.submittedAt).toLocaleDateString()}</strong><small>{deadline ? `Due ${deadline.toLocaleString()}` : 'Complete within 12 hours of acceptance'}</small></div><div className="queue-progress"><strong>{accepted ? `${progress}/${total}` : '—'}</strong>{accepted && <span><i style={{ width: `${total ? progress / total * 100 : 0}%` }} /></span>}</div><div><span className={`review-status ${review.status}`}>{review.status.replace('_', ' ')}</span></div>{review.status === 'available' ? <div className="review-opportunity-actions"><button className="decline-review" onClick={() => onDecision(review.id, 'decline')}>Decline</button><button className="accept-review" onClick={() => onDecision(review.id, 'accept')}>Accept</button></div> : review.status === 'completed' ? <button className="review-action evaluation-action" onClick={() => onEvaluation(review.id)}>Evaluation Result <ArrowRight size={14} /></button> : <button className="review-action" onClick={() => onOpen(review.id)}>{progress ? 'Continue' : 'Start'} <ArrowRight size={14} /></button>}</div> })}</div></div>
   )
 }
 
@@ -1038,8 +1055,8 @@ function AdminPanel({ view, database, onView, onUpdate, onReviewerDecision, onPu
     dashboard: { title: 'Operations overview', description: 'Monitor registrations, mentor access, assessment reviews, and final scoring.' },
     reviewers: { title: 'Mentor registrations', description: 'Approve mentor profiles before they can receive matching review opportunities.' },
     candidates: { title: 'Candidate registrations', description: 'Track every registered candidate and whether their assessment is pending or completed.' },
-    assessments: { title: 'Assessment reviews', description: 'Review every candidate assessment for faster AI calibration, with or without a mentor match.' },
-    'assessment-review': { title: 'Admin calibration review', description: 'Compare candidate evidence with the AI draft and calibrate every rubric criterion.' },
+    assessments: { title: 'Assessment reviews', description: 'Review and publish any candidate assessment, including overdue mentor reviews.' },
+    'assessment-review': { title: 'Admin assessment review', description: 'Compare candidate evidence with the AI draft, finalize scoring, and publish the result.' },
     'question-preview': { title: 'Question preview', description: 'Generate and inspect the exact assessment candidates receive for any target profile.' },
     adjudication: { title: 'Score adjudication', description: 'Resolve independently completed mentor reviews and publish the final result.' },
     'ai-calibration': { title: 'AI calibration governance', description: 'Measure AI–mentor agreement and control when automated publication becomes eligible.' },
@@ -1194,15 +1211,21 @@ function CandidateRegistrations({ database }: { database: PortalDatabase }) {
 }
 
 function AdminAssessmentReviews({ database, onReview }: { database: PortalDatabase; onReview: (submission: PortalSubmission) => void }) {
-  const submissions = [...database.submissions].sort((a, b) => b.submittedAt.localeCompare(a.submittedAt))
-  return <><div className="admin-rule-note"><Bot size={18} /><span><b>Admin reviews accelerate AI calibration</b><small>Your calibration review is independent of mentor matching and does not consume a mentor slot or publish the candidate’s result.</small></span></div><div className="assessment-monitor-list">{submissions.length === 0 ? <div className="empty-admin"><ClipboardCheck size={26} /><b>No assessments submitted yet</b><span>Every candidate submission will appear here, whether mentor-matched or unmatched.</span></div> : submissions.map((submission) => {
-    const mentorReviews = database.reviews.filter((item) => item.submissionId === submission.id && item.reviewType !== 'admin' && item.status !== 'declined')
+  const submissions = [...database.submissions].sort((a, b) => {
+    const aExpired = database.reviews.some((item) => item.submissionId === a.id && item.reviewType !== 'admin' && item.status === 'expired')
+    const bExpired = database.reviews.some((item) => item.submissionId === b.id && item.reviewType !== 'admin' && item.status === 'expired')
+    return Number(bExpired) - Number(aExpired) || b.submittedAt.localeCompare(a.submittedAt)
+  })
+  return <><div className="admin-rule-note"><Bot size={18} /><span><b>Admin review publishes the candidate result</b><small>Starting an unaccepted assessment removes it from mentor availability. Reviews overdue by 12 hours are prioritized here for admin takeover.</small></span></div><div className="assessment-monitor-list">{submissions.length === 0 ? <div className="empty-admin"><ClipboardCheck size={26} /><b>No assessments submitted yet</b><span>Every candidate submission will appear here, whether mentor-matched or unmatched.</span></div> : submissions.map((submission) => {
+    const allMentorReviews = database.reviews.filter((item) => item.submissionId === submission.id && item.reviewType !== 'admin')
+    const mentorReviews = allMentorReviews.filter((item) => !['declined', 'expired'].includes(item.status))
+    const expiredMentors = allMentorReviews.filter((item) => item.status === 'expired')
     const adminReview = database.reviews.find((item) => item.submissionId === submission.id && item.reviewType === 'admin')
     const activeMentors = mentorReviews.filter((item) => ['accepted', 'in_review', 'completed'].includes(item.status))
     const completedMentors = mentorReviews.filter((item) => item.status === 'completed')
     const ready = ['completed', 'unavailable'].includes(submission.aiReviewStatus ?? 'pending')
     const tone = submission.status === 'published' ? 'done' : submission.status === 'adjudication' ? 'decision' : submission.status === 'under_review' ? 'active' : 'pending'
-    return <article key={submission.id} className="assessment-monitor-card"><div className="assessment-monitor-head"><div><small>{submission.id}</small><h3>{submission.profile.name}</h3><p>{submission.role.name} · {submission.industry.name} · {submission.profile.level}</p></div><em className={`admin-status ${tone}`}>{submission.status.replace('_', ' ')}</em></div><div className="assessment-monitor-metrics admin-review-metrics"><span><small>Submitted</small><b>{new Date(submission.submittedAt).toLocaleString()}</b></span><span><small>AI evaluation</small><b>{(submission.aiReviewStatus ?? 'pending').replace('_', ' ')}</b></span><span><small>Mentors active</small><b>{activeMentors.length}</b></span><span><small>Mentor reviews complete</small><b>{completedMentors.length}</b></span><span><small>Admin calibration</small><b>{adminReview ? adminReview.status.replace('_', ' ') : 'Not started'}</b></span></div><div className="assessment-admin-action"><div><small>Mentor assignment</small><b>{mentorReviews.length ? `${mentorReviews.length} matching opportunity${mentorReviews.length === 1 ? '' : 'ies'}` : 'No mentor assigned'}</b></div><button className={adminReview?.status === 'completed' ? 'secondary-button' : 'primary-button compact'} disabled={!ready} onClick={() => onReview(submission)}>{!ready ? 'Waiting for AI evaluation' : adminReview?.status === 'completed' ? 'View admin calibration' : adminReview ? 'Continue admin review' : 'Review assessment'} <ArrowRight size={15} /></button></div></article>
+    return <article key={submission.id} className="assessment-monitor-card"><div className="assessment-monitor-head"><div><small>{submission.id}</small><h3>{submission.profile.name}</h3><p>{submission.role.name} · {submission.industry.name} · {submission.profile.level}</p></div><em className={`admin-status ${expiredMentors.length ? 'decision' : tone}`}>{expiredMentors.length ? 'Admin takeover' : submission.status.replace('_', ' ')}</em></div><div className="assessment-monitor-metrics admin-review-metrics"><span><small>Submitted</small><b>{new Date(submission.submittedAt).toLocaleString()}</b></span><span><small>AI evaluation</small><b>{(submission.aiReviewStatus ?? 'pending').replace('_', ' ')}</b></span><span><small>Mentors active</small><b>{activeMentors.length}</b></span><span><small>Mentor reviews complete</small><b>{completedMentors.length}</b></span><span><small>Admin review</small><b>{adminReview ? adminReview.status.replace('_', ' ') : expiredMentors.length ? 'Takeover required' : 'Not started'}</b></span></div><div className="assessment-admin-action"><div><small>Mentor assignment</small><b>{expiredMentors.length ? '12-hour deadline missed' : mentorReviews.length ? `${mentorReviews.length} matching opportunity${mentorReviews.length === 1 ? '' : 'ies'}` : 'No mentor assigned'}</b></div><button className={adminReview?.status === 'completed' ? 'secondary-button' : 'primary-button compact'} disabled={!ready} onClick={() => onReview(submission)}>{!ready ? 'Waiting for AI evaluation' : adminReview?.status === 'completed' ? 'View published review' : adminReview ? 'Continue and publish' : expiredMentors.length ? 'Take over review' : submission.status === 'published' ? 'Review published result' : 'Review and publish'} <ArrowRight size={15} /></button></div></article>
   })}</div></>
 }
 

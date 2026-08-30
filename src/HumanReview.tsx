@@ -239,7 +239,7 @@ export function ReviewWorkspace({
               </div>
             ))}
           </div>
-          <label className="review-comment"><span>{audience === 'admin' ? 'Admin calibration note' : 'Mentor feedback'} <small>{readOnly ? 'Final' : 'Recommended'}</small></span><textarea disabled={readOnly} rows={3} value={questionReview.comment} onChange={(event) => updateComment(event.target.value)} placeholder="Record evidence, strengths, gaps, and actionable feedback…" /></label>
+          <label className="review-comment"><span>{audience === 'admin' ? 'Admin evaluation note' : 'Mentor feedback'} <small>{readOnly ? 'Final' : 'Recommended'}</small></span><textarea disabled={readOnly} rows={3} value={questionReview.comment} onChange={(event) => updateComment(event.target.value)} placeholder="Record evidence, strengths, gaps, and actionable feedback…" /></label>
         </section>
 
         <div className="review-navigation">
@@ -249,7 +249,7 @@ export function ReviewWorkspace({
             ? <button className="primary-button compact" onClick={onExit}><CheckCircle2 size={16} /> Review complete</button>
             : currentIndex < questions.length - 1
             ? <button className="primary-button compact" disabled={!currentComplete} onClick={() => { onChange(validatedReview()); onSelect(currentIndex + 1) }}>Confirm & next <ArrowRight size={16} /></button>
-            : <button className="primary-button compact" disabled={!currentComplete || reviewedCount < questions.length - 1} onClick={() => onFinalize(validatedReview())}><CheckCircle2 size={16} /> {audience === 'admin' ? 'Complete calibration review' : 'Validate and finalize'}</button>}
+            : <button className="primary-button compact" disabled={!currentComplete || reviewedCount < questions.length - 1} onClick={() => onFinalize(validatedReview())}><CheckCircle2 size={16} /> {audience === 'admin' ? 'Finalize and publish result' : 'Validate and finalize'}</button>}
         </div>
       </section>
     </div>
