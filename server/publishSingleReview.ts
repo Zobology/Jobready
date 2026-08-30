@@ -45,7 +45,7 @@ async function publishSingleReview() {
       `select a.id,a.candidate_id,a.status,a.questions,a.answers
        from assessments a
        where a.candidate_id=$1
-         and exists(select 1 from review_assignments ra where ra.assessment_id=a.id and ra.status='completed')
+         and exists(select 1 from review_assignments ra where ra.assessment_id=a.id and ra.review_type='mentor' and ra.status='completed')
        order by a.submitted_at desc limit 1 for update`,
       [candidate.id],
     )).rows[0]
@@ -54,7 +54,7 @@ async function publishSingleReview() {
     if (assessment.status !== 'published') {
       const activeReviews = (await client.query<ReviewRow>(
         `select id,reviewer_id,status,rubric_scores from review_assignments
-         where assessment_id=$1 and status in ('accepted','in_review','completed')
+         where assessment_id=$1 and review_type='mentor' and status in ('accepted','in_review','completed')
          order by completed_at nulls last,assigned_at`,
         [assessment.id],
       )).rows
@@ -68,7 +68,7 @@ async function publishSingleReview() {
         [JSON.stringify(finalAnswers), assessment.id],
       )
       await client.query(
-        `update review_assignments set status='declined' where assessment_id=$1 and status='available'`,
+        `update review_assignments set status='declined' where assessment_id=$1 and review_type='mentor' and status='available'`,
         [assessment.id],
       )
       await client.query(

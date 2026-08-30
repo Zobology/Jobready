@@ -276,6 +276,12 @@ button { color: inherit; }
 .assessment-monitor-metrics small, .assessment-monitor-metrics b { display: block; }
 .assessment-monitor-metrics small { color: #899792; font-size: 7px; font-weight: 800; text-transform: uppercase; }
 .assessment-monitor-metrics b { margin-top: 4px; font-size: 9px; }
+.assessment-monitor-metrics.admin-review-metrics { grid-template-columns: 1.35fr repeat(4, 1fr); }
+.assessment-admin-action { display: flex; align-items: center; justify-content: space-between; gap: 18px; margin-top: 17px; padding-top: 15px; border-top: 1px solid #e8edeb; }
+.assessment-admin-action small, .assessment-admin-action b { display: block; }
+.assessment-admin-action small { color: #84938e; font-size: 8px; font-weight: 800; letter-spacing: .45px; text-transform: uppercase; }
+.assessment-admin-action b { margin-top: 4px; font-size: 9px; }
+.assessment-admin-action button { min-width: 185px; min-height: 40px; display: inline-flex; align-items: center; justify-content: center; gap: 7px; }
 .mentor-progress { margin-top: 17px; padding-top: 15px; border-top: 1px solid #e8edeb; }
 .mentor-progress > small { color: #84938e; font-size: 8px; font-weight: 800; letter-spacing: .5px; text-transform: uppercase; }
 .mentor-progress > p { margin: 8px 0 0; color: #a26335; font-size: 9px; }
@@ -390,6 +396,7 @@ button { color: inherit; }
   .admin-data-head { display: none; }
   .admin-data-row { grid-template-columns: 1fr 1fr; gap: 16px; }
   .assessment-monitor-metrics { grid-template-columns: 1fr 1fr; }
+  .assessment-monitor-metrics.admin-review-metrics { grid-template-columns: repeat(2, 1fr); }
   .admin-question-preview { grid-template-columns: 1fr; }
   .question-preview-controls { position: static; grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .question-preview-controls > div:first-child, .question-preview-summary { grid-column: 1 / -1; }
@@ -435,6 +442,9 @@ button { color: inherit; }
   .admin-data-row { grid-template-columns: 1fr; }
   .assessment-monitor-head { flex-direction: column; }
   .assessment-monitor-metrics { grid-template-columns: 1fr; }
+  .assessment-monitor-metrics.admin-review-metrics { grid-template-columns: 1fr; }
+  .assessment-admin-action { align-items: stretch; flex-direction: column; }
+  .assessment-admin-action button { width: 100%; }
   .question-preview-controls { grid-template-columns: 1fr; }
   .question-preview-controls > div:first-child, .question-preview-summary { grid-column: auto; }
   .question-preview-guidance { grid-template-columns: 1fr; }

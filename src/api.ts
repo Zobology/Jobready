@@ -55,6 +55,12 @@ export const api = {
   saveReview(review: HumanReview) {
     return request<StateResponse>(`/reviewer/reviews/${review.id}`, { method: 'PUT', body: JSON.stringify({ status: review.status, questionReviews: review.questionReviews }) })
   },
+  startAdminReview(assessmentId: string) {
+    return request<StateResponse & { reviewId: string }>(`/admin/assessments/${assessmentId}/review`, { method: 'POST' })
+  },
+  saveAdminReview(review: HumanReview) {
+    return request<StateResponse>(`/admin/reviews/${review.id}`, { method: 'PUT', body: JSON.stringify({ status: review.status, questionReviews: review.questionReviews }) })
+  },
   decideReview(reviewId: string, decision: 'accept' | 'decline') {
     return request<StateResponse>(`/reviewer/reviews/${reviewId}/decision`, { method: 'POST', body: JSON.stringify({ decision }) })
   },

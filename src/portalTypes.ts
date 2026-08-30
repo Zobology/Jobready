@@ -49,6 +49,7 @@ export interface PortalSubmission {
 export interface AssignedReview extends HumanReview {
   submissionId: string
   reviewerId: string
+  reviewType?: 'mentor' | 'admin'
 }
 
 export interface NotificationRecord {

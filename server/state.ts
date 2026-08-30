@@ -13,6 +13,7 @@ function reviewer(row: Record<string, unknown>) {
     roleIds: row.role_ids,
     industryIds: row.industry_ids,
     status: row.status,
+    reviewType: row.review_type ?? 'mentor',
     linkedinProfile: row.linkedin_url ?? '',
     resumeKey: row.resume_key ?? undefined,
     appliedAt: row.applied_at,
@@ -58,7 +59,7 @@ function review(row: Record<string, unknown>) {
 const submissionSelect = `
   select a.*,
     coalesce(array_agg(ra.reviewer_id) filter (
-      where ra.reviewer_id is not null and ra.status in ('accepted', 'in_review', 'completed')
+      where ra.reviewer_id is not null and ra.review_type = 'mentor' and ra.status in ('accepted', 'in_review', 'completed')
     ), '{}') as assigned_reviewer_ids
   from assessments a left join review_assignments ra on ra.assessment_id = a.id
 `
@@ -80,14 +81,14 @@ export async function loadPortalState(user: AuthenticatedUser) {
       ? `${submissionSelect} where a.candidate_id = $1 group by a.id order by a.submitted_at desc`
       : `${submissionSelect} where exists (
           select 1 from review_assignments own
-          where own.assessment_id = a.id and own.reviewer_id = $1 and own.status <> 'declined'
+          where own.assessment_id = a.id and own.reviewer_id = $1 and own.review_type = 'mentor' and own.status <> 'declined'
         ) group by a.id order by a.submitted_at desc`
   const submissionRows = (await pool.query(submissionQuery, user.role === 'admin' ? [] : [user.id])).rows
 
   const reviewQuery = user.role === 'admin'
     ? `select ra.*, u.email::text reviewer_email, coalesce(nullif(trim(concat_ws(' ', u.first_name, u.last_name)), ''), split_part(u.email::text, '@', 1)) reviewer_name from review_assignments ra join users u on u.id = ra.reviewer_id order by ra.assigned_at desc`
     : user.role === 'reviewer'
-      ? `select ra.*, u.email::text reviewer_email, coalesce(nullif(trim(concat_ws(' ', u.first_name, u.last_name)), ''), split_part(u.email::text, '@', 1)) reviewer_name from review_assignments ra join users u on u.id = ra.reviewer_id where ra.reviewer_id = $1 and ra.status <> 'declined' order by ra.assigned_at desc`
+      ? `select ra.*, u.email::text reviewer_email, coalesce(nullif(trim(concat_ws(' ', u.first_name, u.last_name)), ''), split_part(u.email::text, '@', 1)) reviewer_name from review_assignments ra join users u on u.id = ra.reviewer_id where ra.reviewer_id = $1 and ra.review_type = 'mentor' and ra.status <> 'declined' order by ra.assigned_at desc`
       : null
   const reviewRows = reviewQuery ? (await pool.query(reviewQuery, user.role === 'admin' ? [] : [user.id])).rows : []
 

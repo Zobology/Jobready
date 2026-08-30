@@ -345,7 +345,7 @@ app.post('/api/reviewer/reviews/:id/decision', requireRole('reviewer'), async (r
         `select ra.id, ra.assessment_id, ra.status, a.ai_review_status
          from review_assignments ra
          join assessments a on a.id = ra.assessment_id
-         where ra.id = $1 and ra.reviewer_id = $2
+         where ra.id = $1 and ra.reviewer_id = $2 and ra.review_type = 'mentor'
          for update of ra, a`,
         [request.params.id, request.user!.id],
       )).rows[0]
@@ -365,7 +365,7 @@ app.post('/api/reviewer/reviews/:id/decision', requireRole('reviewer'), async (r
 
       const active = await client.query<{ count: string }>(
         `select count(*) from review_assignments
-         where assessment_id = $1 and status in ('accepted', 'in_review', 'completed')`,
+         where assessment_id = $1 and review_type = 'mentor' and status in ('accepted', 'in_review', 'completed')`,
         [assignment.assessment_id],
       )
       if (Number(active.rows[0].count) >= 2) {
@@ -377,13 +377,13 @@ app.post('/api/reviewer/reviews/:id/decision', requireRole('reviewer'), async (r
       await client.query(`update assessments set status = 'under_review' where id = $1 and status = 'awaiting_review'`, [assignment.assessment_id])
       const accepted = await client.query<{ count: string }>(
         `select count(*) from review_assignments
-         where assessment_id = $1 and status in ('accepted', 'in_review', 'completed')`,
+         where assessment_id = $1 and review_type = 'mentor' and status in ('accepted', 'in_review', 'completed')`,
         [assignment.assessment_id],
       )
       if (Number(accepted.rows[0].count) >= 2) {
         await client.query(
           `update review_assignments set status = 'declined'
-           where assessment_id = $1 and status = 'available'`,
+           where assessment_id = $1 and review_type = 'mentor' and status = 'available'`,
           [assignment.assessment_id],
         )
       }
@@ -404,7 +404,7 @@ app.put('/api/reviewer/reviews/:id', requireRole('reviewer'), async (request, re
       if (input.status === 'completed') {
         const assessment = await client.query<{ questions: Array<{ id: string; rubric: string[] }>; ai_review_status: string }>(
           `select a.questions,a.ai_review_status from assessments a join review_assignments ra on ra.assessment_id=a.id
-           where ra.id=$1 and ra.reviewer_id=$2`,
+           where ra.id=$1 and ra.reviewer_id=$2 and ra.review_type='mentor'`,
           [request.params.id, request.user!.id],
         )
         const row = assessment.rows[0]
@@ -419,12 +419,12 @@ app.put('/api/reviewer/reviews/:id', requireRole('reviewer'), async (request, re
       const updated = await client.query<{ assessment_id: string; rubric_scores: Record<string, { criteria?: Record<string, { score?: number }>; comment?: string }> }>(
         `update review_assignments set rubric_scores=$1, status=$2,
           started_at=coalesce(started_at, now()), completed_at=case when $2='completed' then now() else completed_at end
-         where id=$3 and reviewer_id=$4 and status in ('accepted', 'in_review') returning assessment_id, rubric_scores`,
+         where id=$3 and reviewer_id=$4 and review_type='mentor' and status in ('accepted', 'in_review') returning assessment_id, rubric_scores`,
         [JSON.stringify(input.questionReviews), input.status, request.params.id, request.user!.id],
       )
       if (!updated.rows[0]) {
         const existing = await client.query<{ status: string }>(
-          'select status from review_assignments where id=$1 and reviewer_id=$2',
+          `select status from review_assignments where id=$1 and reviewer_id=$2 and review_type='mentor'`,
           [request.params.id, request.user!.id],
         )
         if (existing.rows[0]?.status === 'completed') return
@@ -437,7 +437,7 @@ app.put('/api/reviewer/reviews/:id', requireRole('reviewer'), async (request, re
           `select
              count(*) filter (where status in ('accepted','in_review','completed')) active,
              count(*) filter (where status='completed') completed
-           from review_assignments where assessment_id=$1`,
+           from review_assignments where assessment_id=$1 and review_type='mentor'`,
           [updated.rows[0].assessment_id],
         )
         const activeCount = Number(counts.rows[0].active)
@@ -459,7 +459,7 @@ app.put('/api/reviewer/reviews/:id', requireRole('reviewer'), async (request, re
           )
           await client.query(
             `update review_assignments set status='declined'
-             where assessment_id=$1 and status='available'`,
+             where assessment_id=$1 and review_type='mentor' and status='available'`,
             [updated.rows[0].assessment_id],
           )
           await client.query(
@@ -473,6 +473,90 @@ app.put('/api/reviewer/reviews/:id', requireRole('reviewer'), async (request, re
             [request.user!.id, updated.rows[0].assessment_id],
           )
         }
+      }
+    })
+    response.json({ state: await loadPortalState(request.user!), user: publicUser(request.user!) })
+  } catch (error) { next(error) }
+})
+
+app.post('/api/admin/assessments/:id/review', requireRole('admin'), async (request, response, next) => {
+  try {
+    const reviewId = await transaction(async (client) => {
+      const assessment = (await client.query<{ id: string; ai_review_status: string; rubric_scores: Record<string, unknown> }>(
+        `select id,ai_review_status,coalesce(ai_review->'rubricScores','{}'::jsonb) rubric_scores
+         from assessments where id=$1 for update`,
+        [request.params.id],
+      )).rows[0]
+      if (!assessment) throw Object.assign(new Error('Assessment not found'), { status: 404 })
+      if (!['completed', 'unavailable'].includes(assessment.ai_review_status)) {
+        throw Object.assign(new Error('The AI evaluation must finish before calibration review can begin'), { status: 409 })
+      }
+      const existing = (await client.query<{ id: string }>(
+        `select id from review_assignments
+         where assessment_id=$1 and reviewer_id=$2 and review_type='admin'`,
+        [assessment.id, request.user!.id],
+      )).rows[0]
+      if (existing) return existing.id
+      const inserted = await client.query<{ id: string }>(
+        `insert into review_assignments(assessment_id,reviewer_id,match_score,status,rubric_scores,review_type)
+         values($1,$2,1,'accepted',$3,'admin') returning id`,
+        [assessment.id, request.user!.id, JSON.stringify(assessment.rubric_scores)],
+      )
+      await client.query(
+        `insert into audit_log(actor_id,action,entity_type,entity_id,metadata)
+         values($1,'admin_calibration_review_started','assessment',$2,jsonb_build_object('review_id',$3::text))`,
+        [request.user!.id, assessment.id, inserted.rows[0].id],
+      )
+      return inserted.rows[0].id
+    })
+    response.json({ reviewId, state: await loadPortalState(request.user!), user: publicUser(request.user!) })
+  } catch (error) { next(error) }
+})
+
+app.put('/api/admin/reviews/:id', requireRole('admin'), async (request, response, next) => {
+  try {
+    const input = reviewSchema.parse(request.body)
+    await transaction(async (client) => {
+      if (input.status === 'completed') {
+        const assessment = await client.query<{ questions: Array<{ id: string; rubric: string[] }>; ai_review_status: string }>(
+          `select a.questions,a.ai_review_status from assessments a
+           join review_assignments ra on ra.assessment_id=a.id
+           where ra.id=$1 and ra.reviewer_id=$2 and ra.review_type='admin'`,
+          [request.params.id, request.user!.id],
+        )
+        const row = assessment.rows[0]
+        if (!row || !['completed', 'unavailable'].includes(row.ai_review_status)) {
+          throw Object.assign(new Error('AI evaluation is not ready for admin calibration'), { status: 409 })
+        }
+        const reviews = input.questionReviews as Record<string, { validated?: boolean; criteria?: Record<string, { score?: number }> }>
+        const complete = row.questions.every((question) => reviews[question.id]?.validated && question.rubric.every((criterion) => {
+          const score = reviews[question.id]?.criteria?.[criterion]?.score
+          return Number.isInteger(score) && Number(score) >= 1 && Number(score) <= 4
+        }))
+        if (!complete) throw Object.assign(new Error('Validate every rubric criterion before finalizing the admin review'), { status: 400 })
+      }
+      const updated = await client.query<{ assessment_id: string; rubric_scores: RubricScores }>(
+        `update review_assignments set rubric_scores=$1,status=$2,
+          started_at=coalesce(started_at,now()),completed_at=case when $2='completed' then now() else completed_at end
+         where id=$3 and reviewer_id=$4 and review_type='admin' and status in ('accepted','in_review')
+         returning assessment_id,rubric_scores`,
+        [JSON.stringify(input.questionReviews), input.status, request.params.id, request.user!.id],
+      )
+      if (!updated.rows[0]) {
+        const existing = (await client.query<{ status: string }>(
+          `select status from review_assignments where id=$1 and reviewer_id=$2 and review_type='admin'`,
+          [request.params.id, request.user!.id],
+        )).rows[0]
+        if (existing?.status === 'completed') return
+        throw Object.assign(new Error(existing ? 'This admin review cannot be edited' : 'Admin review not found'), { status: existing ? 409 : 404 })
+      }
+      if (input.status === 'completed') {
+        await recordHumanCalibration(client, updated.rows[0].assessment_id, String(request.params.id), updated.rows[0].rubric_scores)
+        await client.query(
+          `insert into audit_log(actor_id,action,entity_type,entity_id,metadata)
+           values($1,'admin_calibration_review_completed','assessment',$2,jsonb_build_object('review_id',$3::text))`,
+          [request.user!.id, updated.rows[0].assessment_id, request.params.id],
+        )
       }
     })
     response.json({ state: await loadPortalState(request.user!), user: publicUser(request.user!) })
@@ -529,8 +613,8 @@ app.patch('/api/admin/reviewers/:id', requireRole('admin'), async (request, resp
            where a.status in ('awaiting_review','under_review')
              and a.ai_review_status in ('completed','unavailable')
              and (a.role_snapshot->>'id'=any($2) or a.industry_snapshot->>'id'=any($3))
-             and (select count(*) from review_assignments where assessment_id=a.id and status in ('accepted','in_review','completed')) < 2
-             and not exists(select 1 from review_assignments where assessment_id=a.id and reviewer_id=$1)
+             and (select count(*) from review_assignments where assessment_id=a.id and review_type='mentor' and status in ('accepted','in_review','completed')) < 2
+             and not exists(select 1 from review_assignments where assessment_id=a.id and reviewer_id=$1 and review_type='mentor')
            order by a.review_due_at asc limit 25`,
           [request.params.id, profile.role_ids, profile.industry_ids],
         )
@@ -572,7 +656,7 @@ app.post('/api/admin/assessments/:id/publish', requireRole('admin'), async (requ
     await transaction(async (client) => {
       const assessment = (await client.query('select * from assessments where id=$1 and status=\'adjudication\' for update', [request.params.id])).rows[0]
       if (!assessment) throw Object.assign(new Error('Assessment is not awaiting adjudication'), { status: 409 })
-      const reviews = (await client.query('select * from review_assignments where assessment_id=$1 and status=\'completed\' order by completed_at', [assessment.id])).rows
+      const reviews = (await client.query(`select * from review_assignments where assessment_id=$1 and review_type='mentor' and status='completed' order by completed_at`, [assessment.id])).rows
       if (reviews.length < 2) throw Object.assign(new Error('Two completed reviews are required'), { status: 409 })
       const scored = reviews.map((review) => ({ id: review.id, answers: scoreReview(assessment.questions, assessment.answers, review.rubric_scores) }))
       let finalAnswers = scored.find((review) => review.id === choice)?.answers

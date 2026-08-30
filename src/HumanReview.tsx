@@ -133,6 +133,7 @@ export function ReviewWorkspace({
   onChange,
   onExit,
   onFinalize,
+  audience = 'mentor',
 }: {
   profile: CandidateProfile
   role: RoleFamily
@@ -145,6 +146,7 @@ export function ReviewWorkspace({
   onChange: (review: HumanReview) => void
   onExit: () => void
   onFinalize: (review: HumanReview) => void
+  audience?: 'mentor' | 'admin'
 }) {
   const question = questions[currentIndex]
   const answer = answers[question.id]
@@ -198,7 +200,7 @@ export function ReviewWorkspace({
   return (
     <div className="review-workspace">
       <aside className="review-sidebar">
-        <button className="back-to-queue" onClick={onExit}><ArrowLeft size={15} /> Review queue</button>
+        <button className="back-to-queue" onClick={onExit}><ArrowLeft size={15} /> {audience === 'admin' ? 'All assessments' : 'Review queue'}</button>
         <div className="review-candidate"><i>{profile.name.slice(0, 1).toUpperCase()}</i><span><strong>{profile.name}</strong><small>{role.name}<br />{industry.name} · {profile.level}</small>{profile.resumeKey && <a href={`/api/files/${encodeURIComponent(profile.resumeKey)}`} target="_blank" rel="noreferrer">View candidate résumé ↗</a>}</span></div>
         <div className="review-progress-summary"><span><strong>{reviewedCount}</strong> of {questions.length} reviewed</span><div><i style={{ width: `${(reviewedCount / questions.length) * 100}%` }} /></div></div>
         <div className="review-question-list">
@@ -212,7 +214,7 @@ export function ReviewWorkspace({
 
       <section className="review-stage">
         <div className="review-topline"><span>Question {currentIndex + 1} of {questions.length}</span><span className={`review-status ${review.status}`}>{review.status.replace('_', ' ')}</span></div>
-        {hasAiDraft && <div className="ai-review-banner"><Bot size={19} /><span><strong>AI draft—mentor validation required</strong><small>Review the evidence, confirm or change every suggested score, and edit the feedback before finalizing.</small></span></div>}
+        {hasAiDraft && <div className="ai-review-banner"><Bot size={19} /><span><strong>AI draft—{audience === 'admin' ? 'admin calibration' : 'mentor validation'} required</strong><small>Review the evidence, confirm or change every suggested score, and edit the feedback before finalizing.</small></span></div>}
         <article className="review-evidence-card">
           <div className="evidence-label"><FileText size={15} /> Candidate evidence · {question.bankId}</div>
           <h1>{question.prompt}</h1>
@@ -237,7 +239,7 @@ export function ReviewWorkspace({
               </div>
             ))}
           </div>
-          <label className="review-comment"><span>Mentor feedback <small>{readOnly ? 'Final' : 'Recommended'}</small></span><textarea disabled={readOnly} rows={3} value={questionReview.comment} onChange={(event) => updateComment(event.target.value)} placeholder="Record evidence, strengths, gaps, and actionable feedback…" /></label>
+          <label className="review-comment"><span>{audience === 'admin' ? 'Admin calibration note' : 'Mentor feedback'} <small>{readOnly ? 'Final' : 'Recommended'}</small></span><textarea disabled={readOnly} rows={3} value={questionReview.comment} onChange={(event) => updateComment(event.target.value)} placeholder="Record evidence, strengths, gaps, and actionable feedback…" /></label>
         </section>
 
         <div className="review-navigation">
@@ -247,7 +249,7 @@ export function ReviewWorkspace({
             ? <button className="primary-button compact" onClick={onExit}><CheckCircle2 size={16} /> Review complete</button>
             : currentIndex < questions.length - 1
             ? <button className="primary-button compact" disabled={!currentComplete} onClick={() => { onChange(validatedReview()); onSelect(currentIndex + 1) }}>Confirm & next <ArrowRight size={16} /></button>
-            : <button className="primary-button compact" disabled={!currentComplete || reviewedCount < questions.length - 1} onClick={() => onFinalize(validatedReview())}><CheckCircle2 size={16} /> Validate and finalize</button>}
+            : <button className="primary-button compact" disabled={!currentComplete || reviewedCount < questions.length - 1} onClick={() => onFinalize(validatedReview())}><CheckCircle2 size={16} /> {audience === 'admin' ? 'Complete calibration review' : 'Validate and finalize'}</button>}
         </div>
       </section>
     </div>
