@@ -1,4 +1,5 @@
 import path from 'node:path'
+import { readFileSync } from 'node:fs'
 import { createHash, randomBytes } from 'node:crypto'
 import { fileURLToPath } from 'node:url'
 import bcrypt from 'bcryptjs'
@@ -733,6 +734,15 @@ app.use('/api', (_request, response) => response.status(404).json({ error: 'API 
 
 const currentDirectory = path.dirname(fileURLToPath(import.meta.url))
 const distDirectory = path.resolve(currentDirectory, '../../dist')
+const homepageHtml = readFileSync(path.join(distDirectory, 'index.html'), 'utf8')
+const studentShareHtml = homepageHtml
+  .replace('<link rel="canonical" href="https://www.zobology.in/" />', '<link rel="canonical" href="https://www.zobology.in/students" />')
+  .replace('<meta property="og:url" content="https://www.zobology.in/" />', '<meta property="og:url" content="https://www.zobology.in/students" />')
+
+app.get('/students', (_request, response) => {
+  response.setHeader('cache-control', 'public, max-age=60, must-revalidate')
+  response.type('html').send(studentShareHtml)
+})
 app.use(express.static(distDirectory, {
   index: false,
   maxAge: process.env.NODE_ENV === 'production' ? '1h' : 0,
