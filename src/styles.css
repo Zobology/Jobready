@@ -34,6 +34,7 @@ button { color: inherit; }
 .portal-error-banner button { border: 0; background: none; color: #8d3528; text-decoration: underline; cursor: pointer; font-size: 10px; }
 .portal-brand { display: inline-flex; align-items: center; }
 .portal-brand img { display: block; width: 190px; height: auto; }
+.portal-brand.symbol-brand img { width: 50px; height: 50px; object-fit: contain; }
 .landing-page { min-height: 100vh; background: linear-gradient(145deg, #fbfcf8 0%, #f5f9f5 56%, #eef7f2 100%); }
 .landing-nav { height: 80px; display: flex; align-items: center; justify-content: space-between; width: min(1240px, calc(100% - 64px)); margin: 0 auto; }
 .landing-nav > div { display: flex; align-items: center; gap: 14px; }
@@ -349,6 +350,7 @@ button { color: inherit; }
   .landing-nav .text-button { display: none; }
   .landing-hero { min-height: auto; padding: 50px 0 70px; }
   .portal-brand img { width: 155px; }
+  .portal-brand.symbol-brand img { width: 44px; height: 44px; }
   .landing-brand-title img { width: min(330px, 100%); }
   .landing-copy h2 { letter-spacing: -2px; }
   .landing-actions { align-items: stretch; flex-direction: column; }

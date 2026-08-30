@@ -592,18 +592,18 @@ function emptyPortalDatabase(): PortalDatabase {
   return { accounts: [], reviewers: [], submissions: [], reviews: [], notifications: [], aiGovernance: { mode: 'human_required', model: 'anthropic/claude-opus-5', minimumReviews: 100, maximumMae: 0.35, minimumExactAgreement: 0.75, reviews: 0, criteria: 0, mae: 0, exactAgreement: 0, eligible: false } }
 }
 
-function Brand() {
-  return <span className="portal-brand"><img src="/zobology-logo-header.png" alt="Zobology" /></span>
+function Brand({ symbol = false }: { symbol?: boolean }) {
+  return <span className={symbol ? 'portal-brand symbol-brand' : 'portal-brand'}><img src={symbol ? '/zobology-logo-symbol-v2.png' : '/zobology-logo-wordmark-v2.png'} alt="Zobology" /></span>
 }
 
 function Landing({ onSignIn, onSignUp, onReviewer }: { onSignIn: () => void; onSignUp: () => void; onReviewer: () => void }) {
   return (
     <div className="landing-page">
-      <header className="landing-nav"><Brand /><div><button className="text-button" onClick={onSignIn}>Sign in</button><button className="primary-button compact" onClick={onSignUp}>Get started <ArrowRight size={16} /></button></div></header>
+      <header className="landing-nav"><Brand symbol /><div><button className="text-button" onClick={onSignIn}>Sign in</button><button className="primary-button compact" onClick={onSignUp}>Get started <ArrowRight size={16} /></button></div></header>
       <main className="landing-main">
         <section className="landing-hero">
           <div className="landing-copy">
-            <h1 className="landing-brand-title"><img src="/zobology-logo-header.png" alt="Zobology" /></h1>
+            <h1 className="landing-brand-title"><img src="/zobology-logo-wordmark-v2.png" alt="Zobology" /></h1>
             <h2>Assess. Improve.<br /><em>Get Hired.</em></h2>
             <p>Know exactly where you stand for the role you want. Take a job-specific assessment and receive evidence-based insights powered by AI and governed by industry experts.</p>
             <div className="landing-actions"><button className="primary-button compact" onClick={onSignUp}>Start your assessment <ArrowRight size={17} /></button><button className="secondary-button" onClick={onSignIn}>Sign in</button></div>
@@ -887,7 +887,7 @@ function PortalHeader({ account, items, active, mobileMenu, onMenu, onNavigate, 
   const displayName = `${account.firstName || ''} ${account.lastName || ''}`.trim() || account.email
   const roleLabel = account.role === 'reviewer' ? 'mentor' : account.role
   return (
-    <header className="portal-header"><button className="brand-button" onClick={() => onNavigate(items[0].id)}><Brand /></button><nav className={mobileMenu ? 'portal-nav open' : 'portal-nav'}>{items.map((item) => <button key={item.id} className={active === item.id || (item.id === 'assessment' && ['profile', 'assessment', 'waiting'].includes(active)) ? 'active' : ''} onClick={() => onNavigate(item.id)}>{item.label}</button>)}</nav><div className="portal-account"><button className="notification-button" aria-label="Notifications"><Bell size={18} /></button><span><i>{displayName[0].toUpperCase()}</i><b>{displayName}</b><small>{roleLabel} · {account.email}</small></span><button className="logout-button" onClick={onSignOut} title="Sign out"><LogOut size={17} /></button><button className="menu-button" onClick={onMenu}>{mobileMenu ? <X /> : <Menu />}</button></div></header>
+    <header className="portal-header"><button className="brand-button" onClick={() => onNavigate(items[0].id)}><Brand symbol /></button><nav className={mobileMenu ? 'portal-nav open' : 'portal-nav'}>{items.map((item) => <button key={item.id} className={active === item.id || (item.id === 'assessment' && ['profile', 'assessment', 'waiting'].includes(active)) ? 'active' : ''} onClick={() => onNavigate(item.id)}>{item.label}</button>)}</nav><div className="portal-account"><button className="notification-button" aria-label="Notifications"><Bell size={18} /></button><span><i>{displayName[0].toUpperCase()}</i><b>{displayName}</b><small>{roleLabel} · {account.email}</small></span><button className="logout-button" onClick={onSignOut} title="Sign out"><LogOut size={17} /></button><button className="menu-button" onClick={onMenu}>{mobileMenu ? <X /> : <Menu />}</button></div></header>
   )
 }
 
