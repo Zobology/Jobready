@@ -276,11 +276,13 @@ export function ProfileBuilder({
   setProfile,
   onContinue,
   isPreparing = false,
+  returning = false,
 }: {
   profile: CandidateProfile
   setProfile: (profile: CandidateProfile) => void
   onContinue: () => void | Promise<void>
   isPreparing?: boolean
+  returning?: boolean
 }) {
   const role = roles.find((item) => item.id === profile.roleId)
   const industry = industries.find((item) => item.id === profile.industryId)
@@ -293,9 +295,9 @@ export function ProfileBuilder({
   return (
     <div className="profile-page">
       <section className="profile-intro">
-        <div className="eyebrow"><span /> Personalized assessment</div>
-        <h1>Your target defines<br />your <em>readiness.</em></h1>
-        <p>Tell us where you want to go. We’ll build an assessment around the exact capabilities employers expect for that role and industry.</p>
+        <div className="eyebrow"><span /> {returning ? 'Add another target' : 'Personalized assessment'}</div>
+        <h1>{returning ? <>Choose your next<br /><em>job target.</em></> : <>Your target defines<br />your <em>readiness.</em></>}</h1>
+        <p>{returning ? 'Your education and experience are carried forward from your profile. Select another role and industry to build a distinct assessment.' : 'Tell us where you want to go. We’ll build an assessment around the exact capabilities employers expect for that role and industry.'}</p>
 
         <div className="architecture-line" aria-label="Assessment architecture">
           <div><span>01</span><strong>Core</strong><small>Workplace essentials</small></div>
@@ -313,7 +315,7 @@ export function ProfileBuilder({
 
       <section className="profile-card">
         <div className="card-heading">
-          <div><span>Step 1 of 3</span><h2>Build your job profile</h2></div>
+          <div><span>Step 1 of 3</span><h2>{returning ? 'Add a target assessment' : 'Build your job profile'}</h2></div>
           <div className="step-dots"><i className="active" /><i /><i /></div>
         </div>
 
@@ -412,7 +414,7 @@ export function ProfileBuilder({
         )}
 
         <button className="primary-button" disabled={!isValid || isPreparing} onClick={() => void onContinue()}>
-          {isPreparing ? 'Analyzing your profile…' : 'Build my assessment'} {!isPreparing && <ArrowRight size={18} />}
+          {isPreparing ? 'Analyzing your profile…' : returning ? 'Build another assessment' : 'Build my assessment'} {!isPreparing && <ArrowRight size={18} />}
         </button>
         <p className="privacy-copy">Your responses and uploaded evidence are securely processed through Zobology’s AI-powered, industry-expert-governed evaluation engine.</p>
       </section>

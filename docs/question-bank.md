@@ -6,13 +6,13 @@ The bank is generated from every tab in `Job_Readiness_Role_Industry_Master_Matr
 
 | Bank layer | Coverage | Items |
 | --- | ---: | ---: |
-| Core | 8 competencies × 2 evidence tasks | 16 |
+| Core | 8 competencies × 4 evidence tasks | 32 |
 | Role | 490 role competencies × knowledge/application | 980 |
 | Industry | 361 context areas × knowledge/application | 722 |
 | Role × Industry | 90 roles × 60 industries | 5,400 |
-| **Total** |  | **7,118** |
+| **Total** |  | **7,134** |
 
-An assembled assessment draws 10 core items, 4–7 role application items, 5 industry application items, and one integrated simulation. The exact role count follows the competency model supplied for that role.
+An assembled assessment draws 10 core items, 8 role items, 5 industry items, and one integrated simulation. Previously used core items are deprioritized so a candidate taking assessments for multiple role–industry targets receives a fresh core section until the available variants are exhausted.
 
 ## Required tags
 

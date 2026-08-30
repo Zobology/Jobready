@@ -145,7 +145,7 @@ function resumeMatch(item: QuestionBankItem, profile: AssessmentProfile) {
   })
 }
 
-function selectMixed(items: QuestionBankItem[], total: number, applicationCount: number, profile: AssessmentProfile) {
+function selectMixed(items: QuestionBankItem[], total: number, applicationCount: number, profile: AssessmentProfile, previouslyUsed = new Set<string>()) {
   const groups = [...items.reduce((map, item) => {
     const group = map.get(item.competency) ?? []
     group.push(item)
@@ -155,19 +155,32 @@ function selectMixed(items: QuestionBankItem[], total: number, applicationCount:
   const selected: QuestionBankItem[] = []
   groups.forEach((group, index) => {
     const preferApplication = index < applicationCount
-    const preferred = group.find((item) => isApplicationItem(item) === preferApplication)
-    const item = preferred ?? group[0]
+    const unused = group.filter((item) => !previouslyUsed.has(item.id))
+    const preferred = unused.find((item) => isApplicationItem(item) === preferApplication)
+      ?? group.find((item) => isApplicationItem(item) === preferApplication && !previouslyUsed.has(item.id))
+    const item = preferred ?? unused[0] ?? group[0]
     if (item && selected.length < total) selected.push(item)
   })
-  const applicationSelected = selected.filter(isApplicationItem).length
-  const remaining = items
-    .filter((item) => !selected.some((selectedItem) => selectedItem.id === item.id))
-    .sort((a, b) => {
+  const historicalCompetencyUses = new Map<string, number>()
+  items.forEach((item) => {
+    if (previouslyUsed.has(item.id)) historicalCompetencyUses.set(item.competency, (historicalCompetencyUses.get(item.competency) ?? 0) + 1)
+  })
+  const remaining = items.filter((item) => !selected.some((selectedItem) => selectedItem.id === item.id))
+  while (selected.length < total && remaining.length) {
+    const applicationSelected = selected.filter(isApplicationItem).length
+    remaining.sort((a, b) => {
+      const reuseDifference = Number(previouslyUsed.has(a.id)) - Number(previouslyUsed.has(b.id))
+      if (reuseDifference) return reuseDifference
+      const aCompetencyUses = (historicalCompetencyUses.get(a.competency) ?? 0) + selected.filter((item) => item.competency === a.competency).length
+      const bCompetencyUses = (historicalCompetencyUses.get(b.competency) ?? 0) + selected.filter((item) => item.competency === b.competency).length
+      if (aCompetencyUses !== bCompetencyUses) return aCompetencyUses - bCompetencyUses
       const aNeeded = applicationSelected < applicationCount && isApplicationItem(a) ? 1 : 0
       const bNeeded = applicationSelected < applicationCount && isApplicationItem(b) ? 1 : 0
-      return bNeeded - aNeeded
+      return bNeeded - aNeeded || a.id.localeCompare(b.id)
     })
-  return [...selected, ...remaining].slice(0, total)
+    selected.push(remaining.shift()!)
+  }
+  return selected
 }
 
 const levelComplexity: Record<TargetBand, string> = {
@@ -278,9 +291,9 @@ function addSampleDataTask(questions: Question[], role: RoleFamily, industry: In
   } : item)
 }
 
-export function buildAssessment(role: RoleFamily, industry: Industry, profile: AssessmentProfile): Question[] {
+export function buildAssessment(role: RoleFamily, industry: Industry, profile: AssessmentProfile, options: { previousCoreBankIds?: string[] } = {}): Question[] {
   const bank = getAssessmentBank(role.code, industry.code)
-  const core = selectMixed(bank.core, 10, applicationTarget('core', 10, profile), profile)
+  const core = selectMixed(bank.core, 10, applicationTarget('core', 10, profile), profile, new Set(options.previousCoreBankIds ?? []))
   const roleItems = selectMixed(bank.role, 8, applicationTarget('role', 8, profile), profile)
   const industryItems = selectMixed(bank.industry, 5, applicationTarget('industry', 5, profile), profile)
   const items = [...core, ...roleItems, ...industryItems, ...(bank.simulation ? [bank.simulation] : [])]

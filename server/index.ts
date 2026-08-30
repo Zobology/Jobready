@@ -330,7 +330,7 @@ app.post('/api/candidate/assessments', requireRole('candidate'), async (request,
     void processAssessmentAiReview(result).catch((error) => console.error('AI assessment review failed:', error))
     response.status(201).json({ id: result, state: await loadPortalState(request.user!), user: publicUser(request.user!) })
   } catch (error) {
-    if ((error as { code?: string }).code === '23505') return response.status(409).json({ error: 'You already have an assessment awaiting completion' })
+    if ((error as { code?: string }).code === '23505') return response.status(409).json({ error: 'You already have an active assessment for this role and industry' })
     next(error)
   }
 })

@@ -35,7 +35,7 @@ import {
 import type { AssignedReview, PortalAccount, PortalDatabase, PortalSubmission, ReviewerProfile } from './portalTypes'
 
 type PublicView = 'landing' | 'signin' | 'signup' | 'reviewer-signup' | 'forgot-password' | 'reset-password'
-type CandidateView = 'profile' | 'assessment' | 'waiting' | 'results'
+type CandidateView = 'dashboard' | 'profile' | 'assessment' | 'waiting' | 'results'
 type ReviewerView = 'queue' | 'review' | 'evaluation'
 type AdminView = 'dashboard' | 'reviewers' | 'candidates' | 'assessments' | 'adjudication' | 'ai-calibration'
 
@@ -82,6 +82,12 @@ function accountName(database: PortalDatabase, userId: string) {
   return account ? `${account.firstName || ''} ${account.lastName || ''}`.trim() : ''
 }
 
+function latestCandidateProfile(database: PortalDatabase, userId: string) {
+  return database.submissions
+    .filter((submission) => submission.candidateId === userId)
+    .sort((a, b) => b.submittedAt.localeCompare(a.submittedAt))[0]?.profile
+}
+
 export default function Portal() {
   const initialPath = window.location.pathname.replace(/\/+$/, '')
   const [requestedReviewId] = useState(() => new URLSearchParams(window.location.search).get('review'))
@@ -92,13 +98,14 @@ export default function Portal() {
   const [ready, setReady] = useState(false)
   const [sessionId, setSessionId] = useState<string | null>(() => loadSession())
   const [publicView, setPublicView] = useState<PublicView>(initialPath === '/reset-password' ? 'reset-password' : initialPath === '/forgot-password' ? 'forgot-password' : requestedMentorRegistration ? 'reviewer-signup' : requestedReviewId || requestedAssessment ? 'signin' : 'landing')
-  const [candidateView, setCandidateView] = useState<CandidateView>('profile')
+  const [candidateView, setCandidateView] = useState<CandidateView>('dashboard')
   const [reviewerView, setReviewerView] = useState<ReviewerView>(requestedReviewId ? 'review' : 'queue')
   const [adminView, setAdminView] = useState<AdminView>('dashboard')
   const [profile, setProfile] = useState<CandidateProfile>(initialProfile)
   const [answers, setAnswers] = useState<Record<string, AssessmentAnswer>>({})
   const [questionIndex, setQuestionIndex] = useState(0)
   const [startingNewAssessment, setStartingNewAssessment] = useState(false)
+  const [selectedCandidateSubmissionId, setSelectedCandidateSubmissionId] = useState<string | null>(null)
   const [activeReviewId, setActiveReviewId] = useState<string | null>(requestedReviewId)
   const [reviewQuestionIndex, setReviewQuestionIndex] = useState(0)
   const [mobileMenu, setMobileMenu] = useState(false)
@@ -116,7 +123,9 @@ export default function Portal() {
             setDatabase(result.state)
             setSessionId(result.user.id)
             const name = accountName(result.state, result.user.id)
-            if (name) setProfile((current) => current.name ? current : { ...current, name })
+            const savedProfile = result.user.role === 'candidate' ? latestCandidateProfile(result.state, result.user.id) : undefined
+            if (savedProfile) setProfile({ ...savedProfile, resumeFile: undefined })
+            else if (name) setProfile((current) => current.name ? current : { ...current, name })
           } else {
             setDatabase(emptyPortalDatabase())
             setSessionId(null)
@@ -138,9 +147,10 @@ export default function Portal() {
   }, [database, ready])
 
   const account = database.accounts.find((item) => item.id === sessionId) ?? null
-  const candidateSubmission = account?.role === 'candidate'
-    ? [...database.submissions].reverse().find((item) => item.candidateId === account.id)
-    : undefined
+  const candidateSubmissions = useMemo(() => account?.role === 'candidate'
+    ? database.submissions.filter((item) => item.candidateId === account.id).sort((a, b) => b.submittedAt.localeCompare(a.submittedAt))
+    : [], [account, database.submissions])
+  const selectedCandidateSubmission = candidateSubmissions.find((item) => item.id === selectedCandidateSubmissionId) ?? candidateSubmissions[0]
   const activeReview = database.reviews.find((item) => item.id === activeReviewId)
   const activeSubmission = activeReview ? database.submissions.find((item) => item.id === activeReview.submissionId) : undefined
   const role = roles.find((item) => item.id === profile.roleId) ?? roles[0]
@@ -153,8 +163,10 @@ export default function Portal() {
       level: profile.level,
       resumeName: profile.resumeName,
       resumeSignals: profile.resumeSignals,
+    }, {
+      previousCoreBankIds: candidateSubmissions.flatMap((submission) => submission.questions.filter((question) => question.dimension === 'core').map((question) => question.bankId)),
     }),
-    [role, industry, profile.education, profile.experienceType, profile.experienceYears, profile.level, profile.resumeName, profile.resumeSignals],
+    [role, industry, profile.education, profile.experienceType, profile.experienceYears, profile.level, profile.resumeName, profile.resumeSignals, candidateSubmissions],
   )
 
   function updateDatabase(next: PortalDatabase) {
@@ -174,6 +186,7 @@ export default function Portal() {
     saveSession(null)
     window.history.replaceState({}, '', '/')
     setSessionId(null)
+    setProfile(initialProfile)
     setPublicView('landing')
     setStartingNewAssessment(false)
     setMobileMenu(false)
@@ -182,6 +195,7 @@ export default function Portal() {
   async function submitAssessment() {
     if (!account) return
     setOperationError('')
+    let submissionId = createId('ZOB')
     let submittedProfile = { ...profile, resumeFile: undefined }
     const submittedAnswers = { ...answers }
     try {
@@ -205,6 +219,7 @@ export default function Portal() {
         submittedProfile = { ...submittedProfile, resumeName: profile.resumeName, resumeKey }
         await api.saveProfile({ ...submittedProfile, resumeKey })
         const result = await api.submitAssessment({ profile: submittedProfile, role, industry, questions: assessment, answers: submittedAnswers })
+        submissionId = result.id
         updateDatabase(result.state)
       }
     } catch (error) {
@@ -212,7 +227,7 @@ export default function Portal() {
       return
     }
     const submission: PortalSubmission = {
-      id: createId('ZOB'),
+      id: submissionId,
       candidateId: account.id,
       submittedAt: new Date().toISOString(),
       profile: submittedProfile,
@@ -225,12 +240,18 @@ export default function Portal() {
     }
     if (!backendEnabled) updateDatabase(assignSubmission(database, submission))
     setStartingNewAssessment(false)
+    setSelectedCandidateSubmissionId(submissionId)
     setCandidateView('waiting')
     window.scrollTo(0, 0)
   }
 
   async function beginCandidateAssessment() {
     setOperationError('')
+    const duplicate = candidateSubmissions.find((submission) => submission.status !== 'published' && submission.role.id === profile.roleId && submission.industry.id === profile.industryId)
+    if (duplicate) {
+      setOperationError('You already have an active assessment for this role and industry. Choose another combination or wait for the existing result.')
+      return
+    }
     setPreparingAssessment(true)
     try {
       let nextProfile = profile
@@ -254,6 +275,29 @@ export default function Portal() {
     } finally {
       setPreparingAssessment(false)
     }
+  }
+
+  function startNewCandidateAssessment() {
+    const savedProfile = candidateSubmissions[0]?.profile ?? profile
+    setProfile({
+      ...savedProfile,
+      name: `${account?.firstName || ''} ${account?.lastName || ''}`.trim() || savedProfile.name,
+      roleId: '',
+      industryId: '',
+      resumeFile: undefined,
+    })
+    setAnswers({})
+    setQuestionIndex(0)
+    setStartingNewAssessment(true)
+    setCandidateView('profile')
+    window.scrollTo(0, 0)
+  }
+
+  function openCandidateSubmission(submission: PortalSubmission) {
+    setSelectedCandidateSubmissionId(submission.id)
+    setStartingNewAssessment(false)
+    setCandidateView(submission.status === 'published' ? 'results' : 'waiting')
+    window.scrollTo(0, 0)
   }
 
   function enqueueReviewSave(review: HumanReview) {
@@ -383,14 +427,18 @@ export default function Portal() {
           saveSession(userId)
           setSessionId(userId)
           const name = accountName(nextDatabase, userId)
-          if (name) setProfile((current) => current.name ? current : { ...current, name })
+          const savedProfile = latestCandidateProfile(nextDatabase, userId)
+          if (savedProfile) setProfile({ ...savedProfile, resumeFile: undefined })
+          else if (name) setProfile((current) => current.name ? current : { ...current, name })
         }}
         onServerAuthenticated={(nextDatabase, userId) => {
           window.history.replaceState({}, '', '/')
           updateDatabase(nextDatabase)
           setSessionId(userId)
           const name = accountName(nextDatabase, userId)
-          if (name) setProfile((current) => current.name ? current : { ...current, name })
+          const savedProfile = latestCandidateProfile(nextDatabase, userId)
+          if (savedProfile) setProfile({ ...savedProfile, resumeFile: undefined })
+          else if (name) setProfile((current) => current.name ? current : { ...current, name })
         }}
       />
     )
@@ -401,15 +449,15 @@ export default function Portal() {
     ? candidateView
     : candidateView === 'assessment'
     ? 'assessment'
-    : candidateSubmission
-      ? candidateSubmission.status === 'published' ? 'results' : 'waiting'
-      : 'profile'
+    : candidateView === 'waiting' && selectedCandidateSubmission ? 'waiting'
+    : candidateView === 'results' && selectedCandidateSubmission?.status === 'published' ? 'results'
+    : candidateSubmissions.length ? 'dashboard' : 'profile'
   const activeReviewCanOpen = activeReview && ['accepted', 'in_review', 'completed'].includes(activeReview.status)
   const resolvedReviewerView: ReviewerView = reviewerView === 'evaluation' && activeReview?.status === 'completed'
     ? 'evaluation'
     : reviewerView === 'review' && activeReviewCanOpen ? 'review' : 'queue'
   const navItems = account.role === 'candidate'
-    ? [{ id: 'assessment', label: 'Assessment' }, { id: 'results', label: 'Results' }]
+    ? [{ id: 'dashboard', label: 'My assessments' }, { id: 'profile', label: 'New assessment' }]
     : account.role === 'reviewer'
       ? [{ id: 'queue', label: 'Assessment queue' }]
       : [{ id: 'dashboard', label: 'Overview' }, { id: 'reviewers', label: 'Mentors' }, { id: 'candidates', label: 'Candidates' }, { id: 'assessments', label: 'Assessments' }, { id: 'ai-calibration', label: 'AI Calibration' }, { id: 'adjudication', label: 'Adjudication' }]
@@ -424,13 +472,11 @@ export default function Portal() {
         onMenu={() => setMobileMenu(!mobileMenu)}
         onNavigate={(id) => {
           if (account.role === 'candidate') {
-            if (id === 'assessment') {
-              if (candidateSubmission?.status === 'published') {
-                setStartingNewAssessment(true)
-                setCandidateView('profile')
-              } else setCandidateView(candidateSubmission ? 'waiting' : 'profile')
+            if (id === 'dashboard') {
+              setStartingNewAssessment(false)
+              setCandidateView(candidateSubmissions.length ? 'dashboard' : 'profile')
             }
-            if (id === 'results' && candidateSubmission?.status === 'published') setCandidateView('results')
+            if (id === 'profile') startNewCandidateAssessment()
           } else if (account.role === 'reviewer') setReviewerView('queue')
           else setAdminView(id as AdminView)
           setMobileMenu(false)
@@ -441,7 +487,8 @@ export default function Portal() {
         {operationError && <div className="portal-error-banner" role="alert">{operationError}<button onClick={() => setOperationError('')}>Dismiss</button></div>}
         {account.role === 'candidate' && (
           <>
-            {resolvedCandidateView === 'profile' && <ProfileBuilder profile={profile} setProfile={setProfile} onContinue={beginCandidateAssessment} isPreparing={preparingAssessment} />}
+            {resolvedCandidateView === 'dashboard' && <CandidateAssessmentHub account={account} submissions={candidateSubmissions} onNew={startNewCandidateAssessment} onOpen={openCandidateSubmission} />}
+            {resolvedCandidateView === 'profile' && <ProfileBuilder profile={profile} setProfile={setProfile} onContinue={beginCandidateAssessment} isPreparing={preparingAssessment} returning={candidateSubmissions.length > 0} />}
             {resolvedCandidateView === 'assessment' && (
               <Assessment
                 questions={assessment}
@@ -454,16 +501,16 @@ export default function Portal() {
                 onNext={() => questionIndex === assessment.length - 1 ? submitAssessment() : setQuestionIndex(questionIndex + 1)}
               />
             )}
-            {resolvedCandidateView === 'waiting' && candidateSubmission && <CandidateWaiting submission={candidateSubmission} />}
-            {resolvedCandidateView === 'results' && candidateSubmission?.finalAnswers && (
+            {resolvedCandidateView === 'waiting' && selectedCandidateSubmission && <CandidateWaiting submission={selectedCandidateSubmission} onBack={() => setCandidateView('dashboard')} onNew={startNewCandidateAssessment} />}
+            {resolvedCandidateView === 'results' && selectedCandidateSubmission?.finalAnswers && (
               <Results
-                profile={candidateSubmission.profile}
-                role={candidateSubmission.role}
-                industry={candidateSubmission.industry}
-                questions={candidateSubmission.questions}
-                answers={candidateSubmission.finalAnswers}
-                reviewerName={candidateSubmission.assignedReviewerIds.length > 1 ? 'Zobology expert panel' : 'Zobology industry mentor'}
-                onRetake={() => { setStartingNewAssessment(true); setProfile({ ...initialProfile, name: `${account.firstName || ''} ${account.lastName || ''}`.trim() }); setCandidateView('profile'); window.scrollTo(0, 0) }}
+                profile={selectedCandidateSubmission.profile}
+                role={selectedCandidateSubmission.role}
+                industry={selectedCandidateSubmission.industry}
+                questions={selectedCandidateSubmission.questions}
+                answers={selectedCandidateSubmission.finalAnswers}
+                reviewerName={selectedCandidateSubmission.assignedReviewerIds.length > 1 ? 'Zobology expert panel' : 'Zobology industry mentor'}
+                onRetake={startNewCandidateAssessment}
               />
             )}
           </>
@@ -844,11 +891,49 @@ function PortalHeader({ account, items, active, mobileMenu, onMenu, onNavigate, 
   )
 }
 
-function CandidateWaiting({ submission }: { submission: PortalSubmission }) {
+function CandidateAssessmentHub({ account, submissions, onNew, onOpen }: { account: PortalAccount; submissions: PortalSubmission[]; onNew: () => void; onOpen: (submission: PortalSubmission) => void }) {
+  const published = submissions.filter((submission) => submission.status === 'published').length
+  const underEvaluation = submissions.length - published
+  const latestProfile = submissions[0]?.profile
+  return (
+    <div className="workspace-page candidate-assessment-hub">
+      <div className="workspace-heading">
+        <div><div className="eyebrow"><span /> Candidate workspace</div><h1>My assessments</h1><p>Track readiness for every role and industry you are exploring from one Zobology profile.</p></div>
+        <button className="primary-button compact" onClick={onNew}>Start another assessment <ArrowRight size={16} /></button>
+      </div>
+      <div className="candidate-hub-summary">
+        <article><span><ClipboardCheck /></span><div><small>Total assessments</small><strong>{submissions.length}</strong></div></article>
+        <article><span><Clock3 /></span><div><small>Under evaluation</small><strong>{underEvaluation}</strong></div></article>
+        <article><span><CheckCircle2 /></span><div><small>Results ready</small><strong>{published}</strong></div></article>
+        <article className="candidate-profile-summary"><span><UserCheck /></span><div><small>Candidate profile</small><strong>{account.firstName} {account.lastName}</strong><em>{latestProfile?.education}{latestProfile ? ` · ${latestProfile.experienceType === 'fresher' ? 'Fresher' : latestProfile.experienceYears ? `${latestProfile.experienceYears} years experience` : 'Experienced professional'}` : ''}</em></div></article>
+      </div>
+      <section className="candidate-assessment-section">
+        <div className="candidate-assessment-section-head"><div><span className="section-label">Role × Industry readiness</span><h2>Your assessment portfolio</h2></div><small>Each assessment uses a fresh selection of core competency questions.</small></div>
+        <div className="candidate-assessment-grid">
+          {submissions.map((submission, index) => {
+            const isPublished = submission.status === 'published'
+            const statusLabel = isPublished ? 'Result ready' : submission.status === 'under_review' ? 'Quality review' : submission.status === 'adjudication' ? 'Final validation' : 'AI evaluation'
+            return <article className="candidate-assessment-card" key={submission.id}>
+              <div className="candidate-assessment-card-top"><span>Assessment {submissions.length - index}</span><em className={`review-status ${submission.status}`}>{statusLabel}</em></div>
+              <div className="candidate-target-icon"><Target /></div>
+              <h3>{submission.role.name}</h3>
+              <p>{submission.industry.name} · {submission.profile.level}</p>
+              <dl><div><dt>Submitted</dt><dd>{new Date(submission.submittedAt).toLocaleDateString()}</dd></div><div><dt>Questions</dt><dd>{submission.questions.length}</dd></div></dl>
+              <button className={isPublished ? 'primary-button compact' : 'secondary-button'} onClick={() => onOpen(submission)}>{isPublished ? 'View evaluation result' : 'Track evaluation'} <ArrowRight size={15} /></button>
+            </article>
+          })}
+          <button className="candidate-new-assessment-card" onClick={onNew}><span><Target /></span><strong>Assess another target</strong><small>Choose a new role and industry combination.</small><em>Start assessment <ArrowRight size={14} /></em></button>
+        </div>
+      </section>
+    </div>
+  )
+}
+
+function CandidateWaiting({ submission, onBack, onNew }: { submission: PortalSubmission; onBack: () => void; onNew: () => void }) {
   const target = new Date(new Date(submission.submittedAt).getTime() + 24 * 60 * 60 * 1000)
   const completed = submission.status === 'published'
   return (
-    <div className="status-page"><section className="status-card"><div className="status-icon"><CheckCircle2 size={32} /></div><div className="eyebrow"><span /> Assessment submitted</div><h1>Thank you, {submission.profile.name}.</h1><p className="status-lead">Please wait while Zobology’s AI evaluates your responses against the benchmark for your target role and industry.</p><div className="status-timeline"><div className="done"><i><Check size={13} /></i><span><b>Assessment completed</b><small>{new Date(submission.submittedAt).toLocaleString()}</small></span></div><div className={submission.aiReviewStatus === 'completed' ? 'done' : 'active'}><i>{submission.aiReviewStatus === 'completed' ? <Check size={13} /> : 2}</i><span><b>AI evidence analysis</b><small>{submission.aiReviewStatus === 'completed' ? 'Evaluation prepared' : submission.aiReviewStatus === 'unavailable' ? 'Quality safeguards in progress' : 'Analyzing responses and work samples'}</small></span></div><div className={submission.status === 'under_review' ? 'active' : ''}><i>3</i><span><b>Quality governance</b><small>Expert-governed scoring standards are applied</small></span></div><div className={completed ? 'done' : ''}><i>{completed ? <Check size={13} /> : 4}</i><span><b>Results published</b><small>Expected by {target.toLocaleString()}</small></span></div></div><div className="submission-reference"><span><small>Submission ID</small><b>{submission.id}</b></span><span><small>Target profile</small><b>{submission.role.name} · {submission.industry.name}</b></span><span><small>Status</small><b>{submission.status.replace('_', ' ')}</b></span></div><div className="human-review-note"><ShieldCheck size={20} /><span><strong>AI Powered · Industry Expert Governed</strong>Your evaluation follows structured, job-specific rubrics designed and calibrated for consistent readiness insights.</span></div></section></div>
+    <div className="status-page"><section className="status-card"><div className="status-icon"><CheckCircle2 size={32} /></div><div className="eyebrow"><span /> Assessment submitted</div><h1>Thank you, {submission.profile.name}.</h1><p className="status-lead">Please wait while Zobology’s AI evaluates your responses against the benchmark for your target role and industry.</p><div className="status-timeline"><div className="done"><i><Check size={13} /></i><span><b>Assessment completed</b><small>{new Date(submission.submittedAt).toLocaleString()}</small></span></div><div className={submission.aiReviewStatus === 'completed' ? 'done' : 'active'}><i>{submission.aiReviewStatus === 'completed' ? <Check size={13} /> : 2}</i><span><b>AI evidence analysis</b><small>{submission.aiReviewStatus === 'completed' ? 'Evaluation prepared' : submission.aiReviewStatus === 'unavailable' ? 'Quality safeguards in progress' : 'Analyzing responses and work samples'}</small></span></div><div className={submission.status === 'under_review' ? 'active' : ''}><i>3</i><span><b>Quality governance</b><small>Expert-governed scoring standards are applied</small></span></div><div className={completed ? 'done' : ''}><i>{completed ? <Check size={13} /> : 4}</i><span><b>Results published</b><small>Expected by {target.toLocaleString()}</small></span></div></div><div className="submission-reference"><span><small>Submission ID</small><b>{submission.id}</b></span><span><small>Target profile</small><b>{submission.role.name} · {submission.industry.name}</b></span><span><small>Status</small><b>{submission.status.replace('_', ' ')}</b></span></div><div className="human-review-note"><ShieldCheck size={20} /><span><strong>AI Powered · Industry Expert Governed</strong>Your evaluation follows structured, job-specific rubrics designed and calibrated for consistent readiness insights.</span></div><div className="candidate-waiting-actions"><button className="secondary-button" onClick={onBack}>View all assessments</button><button className="primary-button compact" onClick={onNew}>Start another assessment <ArrowRight size={15} /></button></div></section></div>
   )
 }
 
