@@ -23,6 +23,8 @@ export interface QuestionBankItem {
   assessmentModes: AssessmentMode[]
   responseType: ResponseType
   prompt: string
+  scenario?: string
+  task?: string
   guidance: string
   rubric: string[]
   diagnosticTags: DiagnosticTag[]

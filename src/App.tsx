@@ -481,7 +481,14 @@ export function Assessment({
 
         <div className="question-card">
           <div className="question-context"><Sparkles size={14} /> {question.context}</div>
-          <h1>{question.prompt}</h1>
+          {question.scenario && (
+            <div className="scenario-brief">
+              <span>Scenario</span>
+              <p>{question.scenario}</p>
+            </div>
+          )}
+          <span className="task-label">Your task</span>
+          <h1>{question.task ?? question.prompt}</h1>
           <p>{question.guidance}</p>
 
           {question.responseType === 'audio' ? (
