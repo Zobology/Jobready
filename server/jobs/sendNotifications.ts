@@ -33,7 +33,7 @@ function signature() {
 }
 
 function layout(content: string) {
-  return `<div style="margin:0;padding:30px 14px;background:#f4f7f5"><div style="max-width:640px;margin:auto;overflow:hidden;background:#fff;border:1px solid #e0e8e4;border-radius:14px;font-family:Arial,sans-serif;color:#17312b;line-height:1.65"><div style="padding:22px 30px;background:#143c33;color:#fff;font-size:24px;font-weight:800">Zobology</div><div style="padding:28px 30px">${content}</div></div></div>`
+  return `<div style="margin:0;padding:30px 14px;background:#f4f7f5"><div style="max-width:640px;margin:auto;overflow:hidden;background:#fff;border:1px solid #e0e8e4;border-radius:14px;font-family:Arial,sans-serif;color:#17312b;line-height:1.65"><div style="padding:16px 30px;background:#fff;border-bottom:1px solid #e0e8e4"><img src="${escapeHtml(appUrl)}/zobology-logo-header.png" alt="Zobology" width="210" style="display:block;width:210px;max-width:100%;height:auto"></div><div style="padding:28px 30px">${content}</div></div></div>`
 }
 
 function templateFor(notification: NotificationRow) {

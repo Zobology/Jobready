@@ -13,7 +13,6 @@ import {
   ShieldCheck,
   Sparkles,
   Target,
-  TrendingUp,
   UserCheck,
   Users,
   X,
@@ -367,7 +366,7 @@ export default function Portal() {
     }
   }
 
-  if (!ready) return <div className="portal-loader"><span className="brand-mark"><TrendingUp /></span><p>Preparing Zobology…</p></div>
+  if (!ready) return <div className="portal-loader"><span className="portal-loader-logo"><img src="/zobology-logo-icon.png" alt="" /></span><p>Preparing Zobology…</p></div>
 
   if (!account) {
     if (publicView === 'landing') return <Landing onSignIn={() => navigatePublic('signin')} onSignUp={() => navigatePublic('signup')} onReviewer={() => navigatePublic('reviewer-signup')} />
@@ -547,7 +546,7 @@ function emptyPortalDatabase(): PortalDatabase {
 }
 
 function Brand() {
-  return <span className="portal-brand"><span className="brand-mark"><TrendingUp size={19} /></span><strong>Zobo<span>logy</span></strong></span>
+  return <span className="portal-brand"><img src="/zobology-logo-header.png" alt="Zobology" /></span>
 }
 
 function Landing({ onSignIn, onSignUp, onReviewer }: { onSignIn: () => void; onSignUp: () => void; onReviewer: () => void }) {
@@ -557,7 +556,7 @@ function Landing({ onSignIn, onSignUp, onReviewer }: { onSignIn: () => void; onS
       <main className="landing-main">
         <section className="landing-hero">
           <div className="landing-copy">
-            <h1>Zobology</h1>
+            <h1 className="landing-brand-title"><img src="/zobology-logo-header.png" alt="Zobology" /></h1>
             <h2>Assess. Improve.<br /><em>Get Hired.</em></h2>
             <p>Know exactly where you stand for the role you want. Take a job-specific assessment and receive evidence-based insights powered by AI and governed by industry experts.</p>
             <div className="landing-actions"><button className="primary-button compact" onClick={onSignUp}>Start your assessment <ArrowRight size={17} /></button><button className="secondary-button" onClick={onSignIn}>Sign in</button></div>

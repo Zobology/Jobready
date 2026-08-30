@@ -599,7 +599,7 @@ app.use(express.static(distDirectory, {
   index: false,
   maxAge: process.env.NODE_ENV === 'production' ? '1h' : 0,
   setHeaders: (response, filePath) => {
-    if (filePath.endsWith('zobology-social-card.png')) {
+    if (filePath.includes('zobology-social-card')) {
       response.setHeader('cache-control', 'public, max-age=86400, immutable')
       response.setHeader('cross-origin-resource-policy', 'cross-origin')
       response.setHeader('access-control-allow-origin', '*')
