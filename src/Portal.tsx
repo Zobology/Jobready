@@ -457,7 +457,9 @@ export default function Portal() {
     ? 'evaluation'
     : reviewerView === 'review' && activeReviewCanOpen ? 'review' : 'queue'
   const navItems = account.role === 'candidate'
-    ? [{ id: 'dashboard', label: 'My assessments' }, { id: 'profile', label: 'New assessment' }]
+    ? candidateSubmissions.length
+      ? [{ id: 'dashboard', label: 'My assessments' }, { id: 'profile', label: 'New assessment' }]
+      : [{ id: 'profile', label: 'Assessment' }]
     : account.role === 'reviewer'
       ? [{ id: 'queue', label: 'Assessment queue' }]
       : [{ id: 'dashboard', label: 'Overview' }, { id: 'reviewers', label: 'Mentors' }, { id: 'candidates', label: 'Candidates' }, { id: 'assessments', label: 'Assessments' }, { id: 'ai-calibration', label: 'AI Calibration' }, { id: 'adjudication', label: 'Adjudication' }]
