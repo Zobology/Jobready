@@ -22,6 +22,7 @@ function reviewer(row: Record<string, unknown>) {
 }
 
 function submission(row: Record<string, unknown>) {
+  const coachingPlan = row.coaching_plan as { status?: string } | undefined
   return {
     id: row.id,
     candidateId: row.candidate_id,
@@ -40,6 +41,7 @@ function submission(row: Record<string, unknown>) {
     aiModel: row.ai_model ?? undefined,
     aiReviewedAt: row.ai_reviewed_at ?? undefined,
     aiReviewError: row.ai_review_error ?? undefined,
+    coachingPlan,
   }
 }
 
@@ -60,6 +62,22 @@ function review(row: Record<string, unknown>) {
 
 const submissionSelect = `
   select a.*,
+    (select jsonb_build_object(
+      'id', cp.id,
+      'assessmentId', cp.assessment_id,
+      'totalHours', cp.total_hours,
+      'aiHours', cp.ai_hours,
+      'expertHours', cp.expert_hours,
+      'summary', cp.summary,
+      'focusAreas', cp.focus_areas,
+      'sessions', cp.sessions,
+      'status', cp.status,
+      'curatedBy', cp.curated_by,
+      'reviewedBy', cp.reviewed_by,
+      'reviewedAt', cp.reviewed_at,
+      'createdAt', cp.created_at,
+      'updatedAt', cp.updated_at
+    ) from coaching_plans cp where cp.assessment_id = a.id) as coaching_plan,
     coalesce(array_agg(ra.reviewer_id) filter (
       where ra.reviewer_id is not null and ra.review_type = 'mentor' and ra.status in ('accepted', 'in_review', 'completed')
     ), '{}') as assigned_reviewer_ids
@@ -107,6 +125,32 @@ export async function loadPortalState(user: AuthenticatedUser) {
     sentAt: row.sent_at ?? undefined,
   }))
 
+  const assessmentDrafts = user.role === 'candidate' ? (await pool.query(
+    `select candidate_id,profile_snapshot,role_snapshot,industry_snapshot,questions,answers,current_question_index,updated_at
+     from assessment_drafts where candidate_id=$1`, [user.id],
+  )).rows.map((row) => ({
+    candidateId: row.candidate_id,
+    profile: row.profile_snapshot,
+    role: row.role_snapshot,
+    industry: row.industry_snapshot,
+    questions: row.questions,
+    answers: row.answers,
+    currentQuestionIndex: row.current_question_index,
+    updatedAt: row.updated_at,
+  })) : []
+
+  const coachingProgress = user.role === 'candidate' ? (await pool.query(
+    `select coaching_plan_id,session_id,progress_percent,status,completed_at,updated_at
+     from coaching_session_progress where candidate_id=$1 order by updated_at`, [user.id],
+  )).rows.map((row) => ({
+    coachingPlanId: row.coaching_plan_id,
+    sessionId: row.session_id,
+    progressPercent: row.progress_percent,
+    status: row.status,
+    completedAt: row.completed_at ?? undefined,
+    updatedAt: row.updated_at,
+  })) : []
+
   const activeModel = activeAiModel()
   let aiGovernance = { mode: 'human_required', model: activeModel, minimumReviews: 100, maximumMae: 0.35, minimumExactAgreement: 0.75, reviews: 0, criteria: 0, mae: 0, exactAgreement: 0, eligible: false }
   if (user.role === 'admin') {
@@ -136,12 +180,19 @@ export async function loadPortalState(user: AuthenticatedUser) {
   const reviewerStatuses = new Map(reviewRows.map((row) => [String(row.assessment_id), String(row.status)]))
   const submissions = submissionRows.map((row) => {
     const mapped = submission(row)
-    if (user.role === 'candidate') return { ...mapped, aiReview: undefined, aiReviewError: undefined }
+    if (user.role === 'candidate') {
+      const coachingPlan = mapped.coachingPlan?.status === 'under_review'
+        ? { ...mapped.coachingPlan, summary: 'Your personalized roadmap is being reviewed before publication.', focusAreas: [], sessions: [] }
+        : mapped.coachingPlan
+      return { ...mapped, coachingPlan, aiReview: undefined, aiReviewError: undefined }
+    }
     if (user.role !== 'reviewer') return mapped
     const status = reviewerStatuses.get(String(row.id))
-    if (status && ['accepted', 'in_review', 'completed'].includes(status)) return mapped
+    const canReviewCoaching = status === 'completed' && mapped.coachingPlan?.status === 'under_review'
+    const reviewerMapped = { ...mapped, coachingPlan: canReviewCoaching ? mapped.coachingPlan : undefined }
+    if (status && ['accepted', 'in_review', 'completed'].includes(status)) return reviewerMapped
     const profile = mapped.profile as Record<string, unknown>
-    return { ...mapped, profile: { ...profile, name: 'Candidate' }, questions: [], answers: {}, aiReview: undefined }
+    return { ...reviewerMapped, profile: { ...profile, name: 'Candidate' }, questions: [], answers: {}, aiReview: undefined }
   })
 
   const reviews = reviewRows.map((row) => {
@@ -155,6 +206,8 @@ export async function loadPortalState(user: AuthenticatedUser) {
     submissions,
     reviews,
     notifications,
+    assessmentDrafts,
+    coachingProgress,
     aiGovernance,
   }
 }

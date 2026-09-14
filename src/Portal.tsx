@@ -20,6 +20,8 @@ import {
 import { Assessment, ProfileBuilder, Results } from './App'
 import { api, backendEnabled } from './api'
 import { ReviewWorkspace } from './HumanReview'
+import { CoachingPlanner } from './CoachingPlan'
+import { buildCoachingPlan, type CoachingPlanInput } from './coaching'
 import { buildAssessment, educationOptions, industries, levelOptions, roles, type Dimension } from './data'
 import type { AssessmentAnswer, CandidateProfile, HumanReview } from './reviewTypes'
 import {
@@ -32,7 +34,7 @@ import {
   saveDatabase,
   saveSession,
 } from './portalStore'
-import type { AssignedReview, PortalAccount, PortalDatabase, PortalSubmission, ReviewerProfile } from './portalTypes'
+import type { AssessmentDraft, AssignedReview, CoachingSessionProgress, PortalAccount, PortalDatabase, PortalSubmission, ReviewerProfile } from './portalTypes'
 
 type PublicView = 'landing' | 'signin' | 'signup' | 'reviewer-signup' | 'forgot-password' | 'reset-password'
 type CandidateView = 'dashboard' | 'profile' | 'assessment' | 'waiting' | 'results'
@@ -103,6 +105,7 @@ export default function Portal() {
   const [adminView, setAdminView] = useState<AdminView>('dashboard')
   const [profile, setProfile] = useState<CandidateProfile>(initialProfile)
   const [answers, setAnswers] = useState<Record<string, AssessmentAnswer>>({})
+  const [draftQuestions, setDraftQuestions] = useState<PortalSubmission['questions'] | null>(null)
   const [questionIndex, setQuestionIndex] = useState(0)
   const [startingNewAssessment, setStartingNewAssessment] = useState(false)
   const [selectedCandidateSubmissionId, setSelectedCandidateSubmissionId] = useState<string | null>(null)
@@ -112,6 +115,7 @@ export default function Portal() {
   const [operationError, setOperationError] = useState('')
   const [preparingAssessment, setPreparingAssessment] = useState(false)
   const reviewSaveTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const draftSaveTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
   const pendingReviewSave = useRef<HumanReview | null>(null)
   const reviewSaveQueue = useRef<Promise<void>>(Promise.resolve())
 
@@ -123,7 +127,7 @@ export default function Portal() {
             setDatabase(result.state)
             setSessionId(result.user.id)
             const name = accountName(result.state, result.user.id)
-            const savedProfile = result.user.role === 'candidate' ? latestCandidateProfile(result.state, result.user.id) : undefined
+            const savedProfile = result.user.role === 'candidate' ? result.state.assessmentDrafts.find((draft) => draft.candidateId === result.user.id)?.profile ?? latestCandidateProfile(result.state, result.user.id) : undefined
             if (savedProfile) setProfile({ ...savedProfile, resumeFile: undefined })
             else if (name) setProfile((current) => current.name ? current : { ...current, name })
           } else {
@@ -150,12 +154,13 @@ export default function Portal() {
   const candidateSubmissions = useMemo(() => account?.role === 'candidate'
     ? database.submissions.filter((item) => item.candidateId === account.id).sort((a, b) => b.submittedAt.localeCompare(a.submittedAt))
     : [], [account, database.submissions])
+  const candidateDraft = account?.role === 'candidate' ? database.assessmentDrafts.find((draft) => draft.candidateId === account.id) : undefined
   const selectedCandidateSubmission = candidateSubmissions.find((item) => item.id === selectedCandidateSubmissionId) ?? candidateSubmissions[0]
   const activeReview = database.reviews.find((item) => item.id === activeReviewId)
   const activeSubmission = activeReview ? database.submissions.find((item) => item.id === activeReview.submissionId) : undefined
   const role = roles.find((item) => item.id === profile.roleId) ?? roles[0]
   const industry = industries.find((item) => item.id === profile.industryId) ?? industries[0]
-  const assessment = useMemo(
+  const generatedAssessment = useMemo(
     () => buildAssessment(role, industry, {
       education: profile.education,
       experienceType: profile.experienceType,
@@ -168,6 +173,55 @@ export default function Portal() {
     }),
     [role, industry, profile.education, profile.experienceType, profile.experienceYears, profile.level, profile.resumeName, profile.resumeSignals, candidateSubmissions],
   )
+  const assessment = draftQuestions ?? generatedAssessment
+
+  function scheduleAssessmentDraft(nextAnswers: Record<string, AssessmentAnswer>, nextIndex: number, questions = assessment, nextProfile = profile) {
+    if (!account || account.role !== 'candidate') return
+    if (draftSaveTimer.current) clearTimeout(draftSaveTimer.current)
+    const snapshot: AssessmentDraft = {
+      candidateId: account.id,
+      profile: { ...nextProfile, resumeFile: undefined },
+      role,
+      industry,
+      questions,
+      answers: nextAnswers,
+      currentQuestionIndex: nextIndex,
+      updatedAt: new Date().toISOString(),
+    }
+    draftSaveTimer.current = setTimeout(() => {
+      if (backendEnabled) {
+        void api.saveAssessmentDraft(snapshot).catch((error: Error) => setOperationError(`Progress could not be saved: ${error.message}`))
+        return
+      }
+      setDatabase((current) => {
+        const next = { ...current, assessmentDrafts: [...current.assessmentDrafts.filter((draft) => draft.candidateId !== account.id), snapshot] }
+        saveDatabase(next)
+        return next
+      })
+    }, 600)
+  }
+
+  async function updateAssessmentAnswer(questionId: string, answer: AssessmentAnswer) {
+    let savedAnswer = answer
+    const immediateAnswers = { ...answers, [questionId]: answer }
+    setAnswers(immediateAnswers)
+    try {
+      if (backendEnabled && answer.audioUrl?.startsWith('blob:')) {
+        const blob = await fetch(answer.audioUrl).then((response) => response.blob())
+        const uploaded = await api.upload('audio', blob, `${questionId}.webm`)
+        savedAnswer = { ...answer, audioUrl: uploaded.url }
+      }
+      if (backendEnabled && answer.workbookFile) {
+        const uploaded = await api.upload('answer_spreadsheet', answer.workbookFile, answer.workbookName || `${questionId}.xlsx`)
+        savedAnswer = { ...savedAnswer, workbookFile: undefined, workbookUrl: uploaded.url, workbookName: answer.workbookName || 'completed-analysis.xlsx' }
+      }
+      const persistedAnswers = { ...immediateAnswers, [questionId]: savedAnswer }
+      setAnswers(persistedAnswers)
+      scheduleAssessmentDraft(persistedAnswers, questionIndex)
+    } catch (error) {
+      setOperationError(`Evidence could not be saved: ${(error as Error).message}`)
+    }
+  }
 
   function updateDatabase(next: PortalDatabase) {
     setDatabase(next)
@@ -182,6 +236,7 @@ export default function Portal() {
   }
 
   async function signOut() {
+    if (draftSaveTimer.current) clearTimeout(draftSaveTimer.current)
     if (backendEnabled) await api.signout().catch(() => undefined)
     saveSession(null)
     window.history.replaceState({}, '', '/')
@@ -238,7 +293,9 @@ export default function Portal() {
       status: 'awaiting_review',
       assignedReviewerIds: [],
     }
-    if (!backendEnabled) updateDatabase(assignSubmission(database, submission))
+    if (draftSaveTimer.current) clearTimeout(draftSaveTimer.current)
+    if (!backendEnabled) updateDatabase(assignSubmission({ ...database, assessmentDrafts: database.assessmentDrafts.filter((draft) => draft.candidateId !== account.id) }, submission))
+    setDraftQuestions(null)
     setStartingNewAssessment(false)
     setSelectedCandidateSubmissionId(submissionId)
     setCandidateView('waiting')
@@ -268,6 +325,8 @@ export default function Portal() {
       if (backendEnabled) await api.saveProfile({ ...nextProfile, resumeFile: undefined })
       setAnswers({})
       setQuestionIndex(0)
+      setDraftQuestions(generatedAssessment)
+      scheduleAssessmentDraft({}, 0, generatedAssessment, nextProfile)
       setCandidateView('assessment')
       window.scrollTo(0, 0)
     } catch (error) {
@@ -275,6 +334,72 @@ export default function Portal() {
     } finally {
       setPreparingAssessment(false)
     }
+  }
+
+  function resumeCandidateAssessment(draft: AssessmentDraft) {
+    setProfile({ ...draft.profile, resumeFile: undefined })
+    setAnswers(draft.answers)
+    setQuestionIndex(Math.min(draft.currentQuestionIndex, Math.max(draft.questions.length - 1, 0)))
+    setDraftQuestions(draft.questions)
+    setStartingNewAssessment(true)
+    setCandidateView('assessment')
+    window.scrollTo(0, 0)
+  }
+
+  async function saveCandidateCoachingPlan(input: CoachingPlanInput) {
+    if (!selectedCandidateSubmission || !account) return
+    if (backendEnabled) {
+      const result = await api.saveCoachingPlan(selectedCandidateSubmission.id, input)
+      updateDatabase(result.state)
+      return
+    }
+    if (!selectedCandidateSubmission.finalAnswers) throw new Error('The final evaluation is required before coaching can be created.')
+    const coachingPlan = buildCoachingPlan({
+      assessmentId: selectedCandidateSubmission.id,
+      roleName: selectedCandidateSubmission.role.name,
+      industryName: selectedCandidateSubmission.industry.name,
+      questions: selectedCandidateSubmission.questions,
+      finalAnswers: selectedCandidateSubmission.finalAnswers,
+    }, input, 'AI-curated from mentor-validated assessment')
+    updateDatabase({
+      ...database,
+      submissions: database.submissions.map((submission) => submission.id === selectedCandidateSubmission.id ? { ...submission, coachingPlan } : submission),
+    })
+  }
+
+  async function approveCoachingRoadmap(planId: string) {
+    if (!account || account.role === 'candidate') return
+    if (backendEnabled) {
+      const result = await api.approveCoachingPlan(planId, account.role)
+      updateDatabase(result.state)
+      return
+    }
+    const reviewedAt = new Date().toISOString()
+    updateDatabase({
+      ...database,
+      submissions: database.submissions.map((submission) => submission.coachingPlan?.id === planId
+        ? { ...submission, coachingPlan: { ...submission.coachingPlan, status: 'published' as const, reviewedBy: account.id, reviewedAt, updatedAt: reviewedAt } }
+        : submission),
+    })
+  }
+
+  async function saveCoachingModuleProgress(planId: string, sessionId: string, progressPercent: number) {
+    if (!account || account.role !== 'candidate') return
+    if (backendEnabled) {
+      const result = await api.saveCoachingProgress(planId, sessionId, progressPercent)
+      updateDatabase(result.state)
+      return
+    }
+    const now = new Date().toISOString()
+    const progress: CoachingSessionProgress = {
+      coachingPlanId: planId,
+      sessionId,
+      progressPercent,
+      status: progressPercent === 100 ? 'completed' : progressPercent > 0 ? 'in_progress' : 'not_started',
+      completedAt: progressPercent === 100 ? now : undefined,
+      updatedAt: now,
+    }
+    updateDatabase({ ...database, coachingProgress: [...database.coachingProgress.filter((item) => !(item.coachingPlanId === planId && item.sessionId === sessionId)), progress] })
   }
 
   function startNewCandidateAssessment() {
@@ -288,6 +413,7 @@ export default function Portal() {
     })
     setAnswers({})
     setQuestionIndex(0)
+    setDraftQuestions(null)
     setStartingNewAssessment(true)
     setCandidateView('profile')
     window.scrollTo(0, 0)
@@ -528,13 +654,13 @@ export default function Portal() {
     ? 'assessment'
     : candidateView === 'waiting' && selectedCandidateSubmission ? 'waiting'
     : candidateView === 'results' && selectedCandidateSubmission?.status === 'published' ? 'results'
-    : candidateSubmissions.length ? 'dashboard' : 'profile'
+    : candidateSubmissions.length || candidateDraft ? 'dashboard' : 'profile'
   const activeReviewCanOpen = activeReview && ['accepted', 'in_review', 'completed'].includes(activeReview.status)
   const resolvedReviewerView: ReviewerView = reviewerView === 'evaluation' && activeReview?.status === 'completed'
     ? 'evaluation'
     : reviewerView === 'review' && activeReviewCanOpen ? 'review' : 'queue'
   const navItems = account.role === 'candidate'
-    ? candidateSubmissions.length
+    ? candidateSubmissions.length || candidateDraft
       ? [{ id: 'dashboard', label: 'My assessments' }, { id: 'profile', label: 'New assessment' }]
       : [{ id: 'profile', label: 'Assessment' }]
     : account.role === 'reviewer'
@@ -566,7 +692,7 @@ export default function Portal() {
         {operationError && <div className="portal-error-banner" role="alert">{operationError}<button onClick={() => setOperationError('')}>Dismiss</button></div>}
         {account.role === 'candidate' && (
           <>
-            {resolvedCandidateView === 'dashboard' && <CandidateAssessmentHub account={account} submissions={candidateSubmissions} onNew={startNewCandidateAssessment} onOpen={openCandidateSubmission} />}
+            {resolvedCandidateView === 'dashboard' && <CandidateAssessmentHub account={account} submissions={candidateSubmissions} draft={candidateDraft} onResume={resumeCandidateAssessment} onNew={startNewCandidateAssessment} onOpen={openCandidateSubmission} />}
             {resolvedCandidateView === 'profile' && <ProfileBuilder profile={profile} setProfile={setProfile} onContinue={beginCandidateAssessment} isPreparing={preparingAssessment} returning={candidateSubmissions.length > 0} />}
             {resolvedCandidateView === 'assessment' && (
               <Assessment
@@ -575,14 +701,14 @@ export default function Portal() {
                 answers={answers}
                 roleName={role.name}
                 industryName={industry.name}
-                onAnswer={(questionId, answer) => setAnswers((current) => ({ ...current, [questionId]: answer }))}
-                onBack={() => questionIndex ? setQuestionIndex(questionIndex - 1) : setCandidateView('profile')}
-                onNext={() => questionIndex === assessment.length - 1 ? submitAssessment() : setQuestionIndex(questionIndex + 1)}
+                onAnswer={(questionId, answer) => void updateAssessmentAnswer(questionId, answer)}
+                onBack={() => { if (questionIndex) { const next = questionIndex - 1; setQuestionIndex(next); scheduleAssessmentDraft(answers, next) } else setCandidateView('profile') }}
+                onNext={() => { if (questionIndex === assessment.length - 1) void submitAssessment(); else { const next = questionIndex + 1; setQuestionIndex(next); scheduleAssessmentDraft(answers, next) } }}
               />
             )}
             {resolvedCandidateView === 'waiting' && selectedCandidateSubmission && <CandidateWaiting submission={selectedCandidateSubmission} onBack={() => setCandidateView('dashboard')} onNew={startNewCandidateAssessment} />}
             {resolvedCandidateView === 'results' && selectedCandidateSubmission?.finalAnswers && (
-              <Results
+              <><Results
                 profile={selectedCandidateSubmission.profile}
                 role={selectedCandidateSubmission.role}
                 industry={selectedCandidateSubmission.industry}
@@ -590,7 +716,7 @@ export default function Portal() {
                 answers={selectedCandidateSubmission.finalAnswers}
                 reviewerName={selectedCandidateSubmission.assignedReviewerIds.length > 1 ? 'Zobology expert panel' : 'Zobology industry mentor'}
                 onRetake={startNewCandidateAssessment}
-              />
+              /><CoachingPlanner submission={selectedCandidateSubmission} progress={database.coachingProgress} onSave={saveCandidateCoachingPlan} onSaveProgress={saveCoachingModuleProgress} /></>
             )}
           </>
         )}
@@ -602,6 +728,7 @@ export default function Portal() {
                 account={account}
                 database={database}
                 onDecision={decideReview}
+                onApproveCoaching={approveCoachingRoadmap}
                 onOpen={(reviewId) => { setActiveReviewId(reviewId); setReviewQuestionIndex(0); setReviewerView('review'); window.scrollTo(0, 0) }}
                 onEvaluation={(reviewId) => { setActiveReviewId(reviewId); setReviewerView('evaluation'); window.scrollTo(0, 0) }}
               />
@@ -676,6 +803,7 @@ export default function Portal() {
               } catch (error) { setOperationError((error as Error).message) }
             } : undefined}
             onAdminReview={openAdminReview}
+            onApproveCoaching={approveCoachingRoadmap}
           />
         ))}
       </main>
@@ -684,7 +812,7 @@ export default function Portal() {
 }
 
 function emptyPortalDatabase(): PortalDatabase {
-  return { accounts: [], reviewers: [], submissions: [], reviews: [], notifications: [], aiGovernance: { mode: 'human_required', model: 'anthropic/claude-opus-5', minimumReviews: 100, maximumMae: 0.35, minimumExactAgreement: 0.75, reviews: 0, criteria: 0, mae: 0, exactAgreement: 0, eligible: false } }
+  return { accounts: [], reviewers: [], submissions: [], reviews: [], notifications: [], assessmentDrafts: [], coachingProgress: [], aiGovernance: { mode: 'human_required', model: 'anthropic/claude-opus-5', minimumReviews: 100, maximumMae: 0.35, minimumExactAgreement: 0.75, reviews: 0, criteria: 0, mae: 0, exactAgreement: 0, eligible: false } }
 }
 
 function Brand({ symbol = false }: { symbol?: boolean }) {
@@ -986,10 +1114,10 @@ function PortalHeader({ account, items, active, mobileMenu, onMenu, onNavigate, 
   )
 }
 
-function CandidateAssessmentHub({ account, submissions, onNew, onOpen }: { account: PortalAccount; submissions: PortalSubmission[]; onNew: () => void; onOpen: (submission: PortalSubmission) => void }) {
+function CandidateAssessmentHub({ account, submissions, draft, onResume, onNew, onOpen }: { account: PortalAccount; submissions: PortalSubmission[]; draft?: AssessmentDraft; onResume: (draft: AssessmentDraft) => void; onNew: () => void; onOpen: (submission: PortalSubmission) => void }) {
   const published = submissions.filter((submission) => submission.status === 'published').length
   const underEvaluation = submissions.length - published
-  const latestProfile = submissions[0]?.profile
+  const latestProfile = draft?.profile ?? submissions[0]?.profile
   return (
     <div className="workspace-page candidate-assessment-hub">
       <div className="workspace-heading">
@@ -1003,6 +1131,7 @@ function CandidateAssessmentHub({ account, submissions, onNew, onOpen }: { accou
         <article className="candidate-profile-summary"><span><UserCheck /></span><div><small>Candidate profile</small><strong>{account.firstName} {account.lastName}</strong><em>{latestProfile?.education}{latestProfile ? ` · ${latestProfile.experienceType === 'fresher' ? 'Fresher' : latestProfile.experienceYears ? `${latestProfile.experienceYears} years experience` : 'Experienced professional'}` : ''}</em></div></article>
       </div>
       <section className="candidate-assessment-section">
+        {draft && <article className="assessment-draft-card"><div><span className="section-label">Saved assessment</span><h2>Continue where you left off</h2><p>{draft.role.name} · {draft.industry.name} · Question {draft.currentQuestionIndex + 1} of {draft.questions.length}</p><small>Last saved {new Date(draft.updatedAt).toLocaleString()}</small></div><button className="primary-button compact" onClick={() => onResume(draft)}>Resume assessment <ArrowRight size={15} /></button></article>}
         <div className="candidate-assessment-section-head"><div><span className="section-label">Role × Industry readiness</span><h2>Your assessment portfolio</h2></div><small>Each assessment uses a fresh selection of core competency questions.</small></div>
         <div className="candidate-assessment-grid">
           {submissions.map((submission, index) => {
@@ -1032,13 +1161,13 @@ function CandidateWaiting({ submission, onBack, onNew }: { submission: PortalSub
   )
 }
 
-function ReviewerDashboard({ account, database, onOpen, onEvaluation, onDecision }: { account: PortalAccount; database: PortalDatabase; onOpen: (reviewId: string) => void; onEvaluation: (reviewId: string) => void; onDecision: (reviewId: string, decision: 'accept' | 'decline') => void }) {
+function ReviewerDashboard({ account, database, onOpen, onEvaluation, onDecision, onApproveCoaching }: { account: PortalAccount; database: PortalDatabase; onOpen: (reviewId: string) => void; onEvaluation: (reviewId: string) => void; onDecision: (reviewId: string, decision: 'accept' | 'decline') => void; onApproveCoaching: (planId: string) => Promise<void> }) {
   const reviews = database.reviews.filter((item) => item.reviewerId === account.id && !['declined', 'expired'].includes(item.status))
   const available = reviews.filter((item) => item.status === 'available')
   const active = reviews.filter((item) => ['accepted', 'in_review'].includes(item.status))
   const completed = reviews.filter((item) => item.status === 'completed')
   return (
-    <div className="workspace-page"><div className="workspace-heading"><div><div className="eyebrow"><span /> Mentor workspace</div><h1>Mentor dashboard</h1><p>Validate AI-drafted assessments against the candidate evidence and job-specific rubric.</p></div><div className="workspace-stats"><Stat icon={<ClipboardCheck />} label="Available" value={available.length} /><Stat icon={<Clock3 />} label="In progress" value={active.length} /><Stat icon={<CheckCircle2 />} label="Completed" value={completed.length} /></div></div><div className="review-type-note"><ClipboardCheck size={18} /><span><strong>AI-assisted assessment reviews</strong><small>Mentor validation required</small></span><div /><Sparkles size={18} /><span><strong>Coaching plan reviews</strong><small>Coming soon</small></span></div><div className="queue-table portal-queue"><div className="queue-table-head"><span>Review</span><span>Target profile</span><span>Received</span><span>Progress</span><span>Status</span><span>Action</span></div>{reviews.length === 0 ? <div className="empty-queue"><ClipboardCheck size={28} /><strong>No reviews available right now</strong><span>AI-drafted matching opportunities will appear here when ready.</span></div> : reviews.map((review) => { const submission = database.submissions.find((item) => item.id === review.submissionId); if (!submission) return null; const progress = Object.values(review.questionReviews).filter((item) => item.validated).length; const accepted = review.status !== 'available'; const total = accepted ? submission.questions.length : 0; const deadline = review.acceptedAt ? new Date(new Date(review.acceptedAt).getTime() + 12 * 60 * 60 * 1000) : null; return <div className="queue-row" key={review.id}><div className="candidate-cell"><i>{accepted ? submission.profile.name[0] : 'A'}</i><span><strong>AI-assisted review</strong><small>{accepted ? submission.profile.name : 'Candidate details unlock after acceptance'}</small></span></div><div><strong>{submission.role.name}</strong><small>{submission.industry.name} · {submission.profile.level}</small></div><div><strong>{new Date(submission.submittedAt).toLocaleDateString()}</strong><small>{deadline ? `Due ${deadline.toLocaleString()}` : 'Complete within 12 hours of acceptance'}</small></div><div className="queue-progress"><strong>{accepted ? `${progress}/${total}` : '—'}</strong>{accepted && <span><i style={{ width: `${total ? progress / total * 100 : 0}%` }} /></span>}</div><div><span className={`review-status ${review.status}`}>{review.status.replace('_', ' ')}</span></div>{review.status === 'available' ? <div className="review-opportunity-actions"><button className="decline-review" onClick={() => onDecision(review.id, 'decline')}>Decline</button><button className="accept-review" onClick={() => onDecision(review.id, 'accept')}>Accept</button></div> : review.status === 'completed' ? <button className="review-action evaluation-action" onClick={() => onEvaluation(review.id)}>Evaluation Result <ArrowRight size={14} /></button> : <button className="review-action" onClick={() => onOpen(review.id)}>{progress ? 'Continue' : 'Start'} <ArrowRight size={14} /></button>}</div> })}</div></div>
+    <div className="workspace-page"><div className="workspace-heading"><div><div className="eyebrow"><span /> Mentor workspace</div><h1>Mentor dashboard</h1><p>Validate AI-drafted assessments and coaching roadmaps before they reach candidates.</p></div><div className="workspace-stats"><Stat icon={<ClipboardCheck />} label="Available" value={available.length} /><Stat icon={<Clock3 />} label="In progress" value={active.length} /><Stat icon={<CheckCircle2 />} label="Completed" value={completed.length} /></div></div><div className="review-type-note"><ClipboardCheck size={18} /><span><strong>AI-assisted assessment reviews</strong><small>Mentor validation required</small></span><div /><Sparkles size={18} /><span><strong>Coaching roadmap reviews</strong><small>Approve before candidate access</small></span></div><div className="queue-table portal-queue"><div className="queue-table-head"><span>Review</span><span>Target profile</span><span>Received</span><span>Progress</span><span>Status</span><span>Action</span></div>{reviews.length === 0 ? <div className="empty-queue"><ClipboardCheck size={28} /><strong>No assessment reviews available</strong><span>New matching opportunities will appear here.</span></div> : reviews.map((review) => { const submission = database.submissions.find((item) => item.id === review.submissionId); if (!submission) return null; const progress = Object.values(review.questionReviews).filter((item) => item.validated).length; const accepted = review.status !== 'available'; const total = accepted ? submission.questions.length : 0; const deadline = review.acceptedAt ? new Date(new Date(review.acceptedAt).getTime() + 12 * 60 * 60 * 1000) : null; return <div className="queue-row" key={review.id}><div className="candidate-cell"><i>{accepted ? submission.profile.name[0] : 'A'}</i><span><strong>AI-assisted review</strong><small>{accepted ? submission.profile.name : 'Candidate details unlock after acceptance'}</small></span></div><div><strong>{submission.role.name}</strong><small>{submission.industry.name} · {submission.profile.level}</small></div><div><strong>{new Date(submission.submittedAt).toLocaleDateString()}</strong><small>{deadline ? `Due ${deadline.toLocaleString()}` : 'Complete within 12 hours of acceptance'}</small></div><div className="queue-progress"><strong>{accepted ? `${progress}/${total}` : '—'}</strong>{accepted && <span><i style={{ width: `${total ? progress / total * 100 : 0}%` }} /></span>}</div><div><span className={`review-status ${review.status}`}>{review.status.replace('_', ' ')}</span></div>{review.status === 'available' ? <div className="review-opportunity-actions"><button className="decline-review" onClick={() => onDecision(review.id, 'decline')}>Decline</button><button className="accept-review" onClick={() => onDecision(review.id, 'accept')}>Accept</button></div> : review.status === 'completed' ? <button className="review-action evaluation-action" onClick={() => onEvaluation(review.id)}>Evaluation Result <ArrowRight size={14} /></button> : <button className="review-action" onClick={() => onOpen(review.id)}>{progress ? 'Continue' : 'Start'} <ArrowRight size={14} /></button>}</div> })}</div><CoachingRoadmapQueue database={database} onApprove={onApproveCoaching} reviewerId={account.id} /></div>
   )
 }
 
@@ -1046,7 +1175,17 @@ function Stat({ icon, label, value }: { icon: React.ReactNode; label: string; va
   return <div className="workspace-stat"><span>{icon}</span><div><small>{label}</small><strong>{value}</strong></div></div>
 }
 
-function AdminPanel({ view, database, onView, onUpdate, onReviewerDecision, onPublish, onAiGovernance, onAdminReview }: { view: AdminView; database: PortalDatabase; onView: (view: AdminView) => void; onUpdate: (database: PortalDatabase) => void; onReviewerDecision?: (userId: string, status: 'approved' | 'rejected') => Promise<void>; onPublish?: (submissionId: string, choice: string) => Promise<void>; onAiGovernance?: (input: { mode?: 'human_required' | 'ai_only'; minimumReviews?: number; maximumMae?: number; minimumExactAgreement?: number }) => Promise<void>; onAdminReview: (submission: PortalSubmission) => void }) {
+function CoachingRoadmapQueue({ database, onApprove, admin = false, reviewerId }: { database: PortalDatabase; onApprove: (planId: string) => Promise<void>; admin?: boolean; reviewerId?: string }) {
+  const [busyId, setBusyId] = useState<string | null>(null)
+  const submissions = database.submissions.filter((submission) => submission.coachingPlan?.status === 'under_review' && (!reviewerId || database.reviews.some((review) => review.submissionId === submission.id && review.reviewerId === reviewerId && review.status === 'completed')))
+  async function approve(planId: string) {
+    setBusyId(planId)
+    try { await onApprove(planId) } finally { setBusyId(null) }
+  }
+  return <section className="coaching-review-queue"><div className="candidate-assessment-section-head"><div><span className="section-label">Coaching governance</span><h2>Roadmaps awaiting approval</h2></div><small>{admin ? 'Admin can approve any pending roadmap.' : 'Roadmaps appear after you complete the candidate assessment review.'}</small></div>{submissions.length === 0 ? <div className="empty-admin"><CheckCircle2 size={26} /><b>No coaching roadmaps awaiting review</b><span>New AI-curated roadmaps will appear here before candidate publication.</span></div> : <div className="coaching-review-list">{submissions.map((submission) => { const plan = submission.coachingPlan!; return <article key={plan.id}><div className="coaching-review-head"><div><small>{submission.profile.name}</small><h3>{submission.role.name}</h3><p>{submission.industry.name} · {plan.totalHours} hours · {plan.aiHours} AI self-paced + {plan.expertHours} expert</p></div><span className="review-status in_review">Review required</span></div><p>{plan.summary}</p><div className="coaching-review-focus">{plan.focusAreas.map((area) => <span key={area.competency}><b>{area.competency}</b><small>Assessment score {area.score}</small></span>)}</div><div className="coaching-review-sessions">{plan.sessions.map((session) => <span key={session.id}><i>{session.sequence}</i><b>{session.title}</b><small>{session.mode === 'expert' && session.preferredDate ? `${session.preferredDate} · ${session.preferredTime}` : 'AI self-paced learning'}</small></span>)}</div><button className="primary-button compact" disabled={busyId === plan.id} onClick={() => void approve(plan.id)}>{busyId === plan.id ? 'Publishing…' : 'Approve and share with candidate'} <ArrowRight size={15} /></button></article> })}</div>}</section>
+}
+
+function AdminPanel({ view, database, onView, onUpdate, onReviewerDecision, onPublish, onAiGovernance, onAdminReview, onApproveCoaching }: { view: AdminView; database: PortalDatabase; onView: (view: AdminView) => void; onUpdate: (database: PortalDatabase) => void; onReviewerDecision?: (userId: string, status: 'approved' | 'rejected') => Promise<void>; onPublish?: (submissionId: string, choice: string) => Promise<void>; onAiGovernance?: (input: { mode?: 'human_required' | 'ai_only'; minimumReviews?: number; maximumMae?: number; minimumExactAgreement?: number }) => Promise<void>; onAdminReview: (submission: PortalSubmission) => void; onApproveCoaching: (planId: string) => Promise<void> }) {
   const pendingReviewers = database.reviewers.filter((item) => item.status === 'pending')
   const candidates = database.accounts.filter((item) => item.role === 'candidate')
   const pendingAssessments = database.submissions.filter((item) => ['awaiting_review', 'under_review'].includes(item.status))
@@ -1101,7 +1240,7 @@ function AdminPanel({ view, database, onView, onUpdate, onReviewerDecision, onPu
       {view === 'question-preview' && <AdminQuestionPreview />}
       {view === 'reviewers' && <ReviewerApprovals database={database} onDecision={approveReviewer} />}
       {view === 'candidates' && <CandidateRegistrations database={database} />}
-      {view === 'assessments' && <AdminAssessmentReviews database={database} onReview={onAdminReview} />}
+      {view === 'assessments' && <><AdminAssessmentReviews database={database} onReview={onAdminReview} /><CoachingRoadmapQueue database={database} onApprove={onApproveCoaching} admin /></>}
       {view === 'ai-calibration' && <AiCalibrationPanel database={database} onUpdate={onAiGovernance} />}
       {view === 'adjudication' && <AdjudicationQueue database={database} onPublish={publish} />}
     </div>

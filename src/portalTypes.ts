@@ -1,5 +1,6 @@
 import type { Industry, Question, RoleFamily } from './data'
 import type { AssessmentAnswer, CandidateProfile, HumanReview, QuestionReview } from './reviewTypes'
+import type { CoachingPlan } from './coaching'
 
 export type AccountRole = 'candidate' | 'reviewer' | 'admin'
 export type ReviewerStatus = 'pending' | 'approved' | 'rejected'
@@ -44,6 +45,27 @@ export interface PortalSubmission {
   aiModel?: string
   aiReviewedAt?: string
   aiReviewError?: string
+  coachingPlan?: CoachingPlan
+}
+
+export interface AssessmentDraft {
+  candidateId: string
+  profile: CandidateProfile
+  role: RoleFamily
+  industry: Industry
+  questions: Question[]
+  answers: Record<string, AssessmentAnswer>
+  currentQuestionIndex: number
+  updatedAt: string
+}
+
+export interface CoachingSessionProgress {
+  coachingPlanId: string
+  sessionId: string
+  progressPercent: number
+  status: 'not_started' | 'in_progress' | 'completed'
+  completedAt?: string
+  updatedAt: string
 }
 
 export interface AssignedReview extends HumanReview {
@@ -67,6 +89,8 @@ export interface PortalDatabase {
   submissions: PortalSubmission[]
   reviews: AssignedReview[]
   notifications: NotificationRecord[]
+  assessmentDrafts: AssessmentDraft[]
+  coachingProgress: CoachingSessionProgress[]
   aiGovernance: AiGovernance
 }
 

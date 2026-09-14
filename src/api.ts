@@ -1,5 +1,6 @@
 import type { HumanReview } from './reviewTypes'
 import type { PortalDatabase, PortalSubmission } from './portalTypes'
+import type { CoachingPlanInput } from './coaching'
 
 interface StateResponse { state: PortalDatabase; user: { id: string; email: string; firstName: string; lastName: string; role: 'candidate' | 'reviewer' | 'admin' } }
 
@@ -51,6 +52,19 @@ export const api = {
   },
   submitAssessment(submission: Pick<PortalSubmission, 'profile' | 'role' | 'industry' | 'questions' | 'answers'>) {
     return request<{ id: string; state: PortalDatabase; user: StateResponse['user'] }>('/candidate/assessments', { method: 'POST', body: JSON.stringify(submission) })
+  },
+  saveAssessmentDraft(draft: Pick<PortalSubmission, 'profile' | 'role' | 'industry' | 'questions' | 'answers'> & { currentQuestionIndex: number }) {
+    return request<void>('/candidate/assessment-draft', { method: 'PUT', body: JSON.stringify(draft) })
+  },
+  deleteAssessmentDraft() { return request<void>('/candidate/assessment-draft', { method: 'DELETE' }) },
+  saveCoachingPlan(assessmentId: string, input: CoachingPlanInput) {
+    return request<StateResponse>(`/candidate/assessments/${assessmentId}/coaching-plan`, { method: 'POST', body: JSON.stringify(input) })
+  },
+  approveCoachingPlan(planId: string, role: 'reviewer' | 'admin') {
+    return request<StateResponse>(`/${role}/coaching-plans/${planId}/approve`, { method: 'POST' })
+  },
+  saveCoachingProgress(planId: string, sessionId: string, progressPercent: number) {
+    return request<StateResponse>(`/candidate/coaching-plans/${planId}/sessions/${encodeURIComponent(sessionId)}/progress`, { method: 'PUT', body: JSON.stringify({ progressPercent }) })
   },
   saveReview(review: HumanReview) {
     return request<StateResponse>(`/reviewer/reviews/${review.id}`, { method: 'PUT', body: JSON.stringify({ status: review.status, questionReviews: review.questionReviews }) })

@@ -10,6 +10,8 @@ export const emptyDatabase: PortalDatabase = {
   submissions: [],
   reviews: [],
   notifications: [],
+  assessmentDrafts: [],
+  coachingProgress: [],
   aiGovernance: { mode: 'human_required', model: 'anthropic/claude-opus-5', minimumReviews: 100, maximumMae: 0.35, minimumExactAgreement: 0.75, reviews: 0, criteria: 0, mae: 0, exactAgreement: 0, eligible: false },
 }
 
@@ -34,7 +36,9 @@ export async function hashPassword(password: string) {
 export function loadDatabase(): PortalDatabase {
   try {
     const stored = localStorage.getItem(DATABASE_KEY)
-    return stored ? { ...emptyDatabase, ...JSON.parse(stored) as PortalDatabase } : { ...emptyDatabase }
+    if (!stored) return { ...emptyDatabase }
+    const parsed = JSON.parse(stored) as Partial<PortalDatabase>
+    return { ...emptyDatabase, ...parsed, assessmentDrafts: parsed.assessmentDrafts ?? [], coachingProgress: parsed.coachingProgress ?? [] } as PortalDatabase
   } catch {
     return { ...emptyDatabase }
   }

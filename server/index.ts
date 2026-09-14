@@ -16,6 +16,7 @@ import { loadPortalState } from './state.js'
 import { readFile, storageConfigured, uploadFile } from './storage.js'
 import { extractResumeSignals } from './resume.js'
 import { buildSampleWorkbook, type DataVariant } from './sampleData.js'
+import { buildCoachingPlan, coachingProgressStatus } from '../src/coaching.js'
 import { calibrationSummary, processAssessmentAiReview, processPendingAiReviews, recordHumanCalibration, type RubricScores } from './aiReview.js'
 import { expireOverdueMentorReviews } from './reviewExpiry.js'
 
@@ -311,6 +312,29 @@ app.get('/api/files/:key', requireUser, async (request, response, next) => {
 })
 
 const assessmentSchema = z.object({ profile: profileSchema, role: z.record(z.string(), z.unknown()), industry: z.record(z.string(), z.unknown()), questions: z.array(z.record(z.string(), z.unknown())).min(1).max(100), answers: z.record(z.string(), z.unknown()) })
+const assessmentDraftSchema = assessmentSchema.extend({ currentQuestionIndex: z.number().int().min(0).max(99) })
+
+app.put('/api/candidate/assessment-draft', requireRole('candidate'), async (request, response, next) => {
+  try {
+    const input = assessmentDraftSchema.parse(request.body)
+    await pool.query(
+      `insert into assessment_drafts(candidate_id,profile_snapshot,role_snapshot,industry_snapshot,questions,answers,current_question_index)
+       values($1,$2,$3,$4,$5,$6,$7)
+       on conflict(candidate_id) do update set profile_snapshot=excluded.profile_snapshot,role_snapshot=excluded.role_snapshot,
+         industry_snapshot=excluded.industry_snapshot,questions=excluded.questions,answers=excluded.answers,
+         current_question_index=excluded.current_question_index,updated_at=now()`,
+      [request.user!.id, JSON.stringify(input.profile), JSON.stringify(input.role), JSON.stringify(input.industry), JSON.stringify(input.questions), JSON.stringify(input.answers), input.currentQuestionIndex],
+    )
+    response.status(204).end()
+  } catch (error) { next(error) }
+})
+
+app.delete('/api/candidate/assessment-draft', requireRole('candidate'), async (request, response, next) => {
+  try {
+    await pool.query('delete from assessment_drafts where candidate_id=$1', [request.user!.id])
+    response.status(204).end()
+  } catch (error) { next(error) }
+})
 
 app.post('/api/candidate/assessments', requireRole('candidate'), async (request, response, next) => {
   try {
@@ -331,6 +355,7 @@ app.post('/api/candidate/assessments', requireRole('candidate'), async (request,
         [request.user!.id, assessmentId],
       )
       await client.query(`insert into audit_log (actor_id, action, entity_type, entity_id) values ($1,'assessment_submitted','assessment',$2)`, [request.user!.id, assessmentId])
+      await client.query('delete from assessment_drafts where candidate_id=$1', [request.user!.id])
       return assessmentId
     })
     void processAssessmentAiReview(result).catch((error) => console.error('AI assessment review failed:', error))
@@ -339,6 +364,122 @@ app.post('/api/candidate/assessments', requireRole('candidate'), async (request,
     if ((error as { code?: string }).code === '23505') return response.status(409).json({ error: 'You already have an active assessment for this role and industry' })
     next(error)
   }
+})
+
+const coachingPlanSchema = z.object({
+  totalHours: z.union([z.literal(2), z.literal(4), z.literal(8), z.literal(16), z.literal(24)]),
+  expertHours: z.number().int().min(0).max(24),
+  expertPreferences: z.array(z.object({
+    date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
+    time: z.string().regex(/^\d{2}:\d{2}$/),
+  })).max(24),
+}).superRefine((input, context) => {
+  if (input.expertHours > input.totalHours) context.addIssue({ code: 'custom', path: ['expertHours'], message: 'Expert hours cannot exceed total hours' })
+  if (input.totalHours === 2 && input.expertHours !== 1) context.addIssue({ code: 'custom', path: ['expertHours'], message: 'The 2-hour interview plan requires one expert hour' })
+  if (input.totalHours > 2 && (input.expertHours < 1 || input.expertHours >= input.totalHours)) context.addIssue({ code: 'custom', path: ['expertHours'], message: 'Roadmaps require at least one AI hour and one expert hour' })
+  if (input.expertPreferences.length !== input.expertHours) context.addIssue({ code: 'custom', path: ['expertPreferences'], message: 'Provide one preference for every expert hour' })
+  if (new Set(input.expertPreferences.map((preference) => preference.date)).size !== input.expertPreferences.length) context.addIssue({ code: 'custom', path: ['expertPreferences'], message: 'Expert sessions must be on different dates' })
+  const today = new Date().toISOString().slice(0, 10)
+  if (input.expertPreferences.some((preference) => preference.date < today)) context.addIssue({ code: 'custom', path: ['expertPreferences'], message: 'Expert-session preferences must use future dates' })
+})
+
+app.post('/api/candidate/assessments/:id/coaching-plan', requireRole('candidate'), async (request, response, next) => {
+  try {
+    const input = coachingPlanSchema.parse(request.body)
+    await transaction(async (client) => {
+      const assessment = (await client.query<{
+        id: string
+        status: string
+        role_snapshot: Record<string, unknown>
+        industry_snapshot: Record<string, unknown>
+        questions: Parameters<typeof buildCoachingPlan>[0]['questions']
+        final_answers: Parameters<typeof buildCoachingPlan>[0]['finalAnswers']
+      }>(
+        `select id,status,role_snapshot,industry_snapshot,questions,final_answers
+         from assessments where id=$1 and candidate_id=$2 for update`,
+        [request.params.id, request.user!.id],
+      )).rows[0]
+      if (!assessment) throw Object.assign(new Error('Assessment not found'), { status: 404 })
+      if (assessment.status !== 'published' || !assessment.final_answers) throw Object.assign(new Error('Coaching is available after the final evaluation is published'), { status: 409 })
+      const plan = buildCoachingPlan({
+        assessmentId: assessment.id,
+        roleName: String(assessment.role_snapshot.name ?? 'target role'),
+        industryName: String(assessment.industry_snapshot.name ?? 'target industry'),
+        questions: assessment.questions,
+        finalAnswers: assessment.final_answers,
+      }, input, 'AI-curated from mentor-validated assessment')
+      await client.query(
+        `insert into coaching_plans(assessment_id,candidate_id,total_hours,ai_hours,expert_hours,summary,focus_areas,sessions,status,curated_by)
+         values($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)
+         on conflict(assessment_id) do update set
+           total_hours=excluded.total_hours,ai_hours=excluded.ai_hours,expert_hours=excluded.expert_hours,
+           summary=excluded.summary,focus_areas=excluded.focus_areas,sessions=excluded.sessions,
+           status=excluded.status,curated_by=excluded.curated_by,reviewed_by=null,reviewed_at=null,updated_at=now()`,
+        [assessment.id, request.user!.id, plan.totalHours, plan.aiHours, plan.expertHours, plan.summary, JSON.stringify(plan.focusAreas), JSON.stringify(plan.sessions), plan.status, plan.curatedBy],
+      )
+      await client.query(
+        `insert into audit_log(actor_id,action,entity_type,entity_id,metadata)
+         values($1,'coaching_plan_selected','assessment',$2,jsonb_build_object('total_hours',$3::int,'ai_hours',$4::int,'expert_hours',$5::int))`,
+        [request.user!.id, assessment.id, plan.totalHours, plan.aiHours, plan.expertHours],
+      )
+    })
+    response.json({ state: await loadPortalState(request.user!), user: publicUser(request.user!) })
+  } catch (error) { next(error) }
+})
+
+app.put('/api/candidate/coaching-plans/:id/sessions/:sessionId/progress', requireRole('candidate'), async (request, response, next) => {
+  try {
+    const progressPercent = z.number().int().min(0).max(100).parse(request.body.progressPercent)
+    await transaction(async (client) => {
+      const plan = (await client.query<{ sessions: Array<{ id: string; mode: string }>; status: string }>(
+        `select sessions,status from coaching_plans where id=$1 and candidate_id=$2 for update`,
+        [request.params.id, request.user!.id],
+      )).rows[0]
+      if (!plan || plan.status !== 'published') throw Object.assign(new Error('Published coaching plan not found'), { status: 404 })
+      const session = plan.sessions.find((item) => item.id === request.params.sessionId)
+      if (!session || session.mode !== 'ai') throw Object.assign(new Error('Only AI self-paced module progress can be updated'), { status: 400 })
+      const status = coachingProgressStatus(progressPercent)
+      await client.query(
+        `insert into coaching_session_progress(coaching_plan_id,candidate_id,session_id,progress_percent,status,completed_at)
+         values($1,$2,$3,$4,$5,case when $5='completed' then now() else null end)
+         on conflict(coaching_plan_id,session_id) do update set progress_percent=excluded.progress_percent,status=excluded.status,
+           completed_at=case when excluded.status='completed' then coalesce(coaching_session_progress.completed_at,now()) else null end,updated_at=now()`,
+        [request.params.id, request.user!.id, request.params.sessionId, progressPercent, status],
+      )
+    })
+    response.json({ state: await loadPortalState(request.user!), user: publicUser(request.user!) })
+  } catch (error) { next(error) }
+})
+
+async function approveCoachingPlan(planId: string, actorId: string, role: 'reviewer' | 'admin') {
+  await transaction(async (client) => {
+    const updated = await client.query<{ assessment_id: string }>(
+      `update coaching_plans cp set status='published',reviewed_by=$1,reviewed_at=now(),updated_at=now()
+       where cp.id=$2 and cp.status='under_review' and (
+         $3='admin' or exists (
+           select 1 from review_assignments ra where ra.assessment_id=cp.assessment_id
+             and ra.reviewer_id=$1 and ra.review_type='mentor' and ra.status='completed'
+         )
+       ) returning assessment_id`,
+      [actorId, planId, role],
+    )
+    if (!updated.rows[0]) throw Object.assign(new Error('Coaching roadmap is unavailable or already reviewed'), { status: 409 })
+    await client.query(`insert into audit_log(actor_id,action,entity_type,entity_id) values($1,'coaching_roadmap_approved','coaching_plan',$2)`, [actorId, planId])
+  })
+}
+
+app.post('/api/reviewer/coaching-plans/:id/approve', requireRole('reviewer'), async (request, response, next) => {
+  try {
+    await approveCoachingPlan(String(request.params.id), request.user!.id, 'reviewer')
+    response.json({ state: await loadPortalState(request.user!), user: publicUser(request.user!) })
+  } catch (error) { next(error) }
+})
+
+app.post('/api/admin/coaching-plans/:id/approve', requireRole('admin'), async (request, response, next) => {
+  try {
+    await approveCoachingPlan(String(request.params.id), request.user!.id, 'admin')
+    response.json({ state: await loadPortalState(request.user!), user: publicUser(request.user!) })
+  } catch (error) { next(error) }
 })
 
 const reviewSchema = z.object({ questionReviews: z.record(z.string(), z.unknown()), status: z.enum(['in_review', 'completed']) })
