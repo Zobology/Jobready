@@ -92,6 +92,7 @@ app.get('/api/assessment-data/core-data-understanding', requireUser, dataDownloa
       education: z.string().trim().min(1).max(160),
       experienceType: z.enum(['fresher', 'experienced']),
       variant: z.enum(['commercial', 'operations', 'people', 'customer', 'technology', 'general']),
+      exercise: z.enum(['core', 'role', 'industry']).default('core'),
     }).parse(request.query)
     const workbook = await buildSampleWorkbook({ ...query, variant: query.variant as DataVariant })
     const fileName = `zobology-${query.role}-${query.industry}-data-exercise.xlsx`.toLowerCase().replace(/[^a-z0-9.]+/g, '-').replace(/-+/g, '-')

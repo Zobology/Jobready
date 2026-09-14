@@ -9,6 +9,8 @@ A full-stack job-readiness portal for candidates, industry mentors, and administ
 - Candidate and mentor name, email, and password registration
 - Bcrypt password hashing and opaque HTTP-only database sessions
 - Candidate profile, generated assessment, written/audio/Excel responses, and 24-hour review status
+- A concise assessment structure: 3 core, 5 role, and 2 industry questions, plus a separate integrated job simulation
+- A fixed format matrix: audio (core + role), Excel (core + role + industry), written communication (core + role), and situational tasks (2 role + 1 industry)
 - AI-first criterion scoring with audio transcription, workbook evidence extraction, confidence flags, and durable retries
 - Mentor validation of AI drafts with criterion-level correction capture and adaptive calibration history
 - Admin-controlled AI-only eligibility gates based on review count, mean score difference, and exact agreement

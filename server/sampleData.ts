@@ -9,6 +9,7 @@ interface DatasetContext {
   education: string
   experienceType: 'fresher' | 'experienced'
   variant: DataVariant
+  exercise: 'core' | 'role' | 'industry'
 }
 
 const regions = ['North', 'South', 'East', 'West']
@@ -77,6 +78,8 @@ function tasksFor(context: DatasetContext) {
     'Identify the two most important patterns or anomalies and support each with evidence.',
     'Recommend one action and define how its impact should be measured.',
   ]
+  if (context.exercise === 'role') base.push(`Translate the findings into a practical ${context.role} work plan with owners and timing.`)
+  if (context.exercise === 'industry') base.push(`Explain one ${context.industry} risk, benchmark, or customer impact that changes your recommendation.`)
   if (/mid|senior/i.test(context.level)) base.push('Compare segments, explain trade-offs, and identify a risk that could change your conclusion.')
   if (/senior/i.test(context.level)) base.push('Add an executive summary covering strategic implications, governance, and the decision you recommend.')
   if (/Master|MBA/i.test(context.education)) base.push('Connect the evidence to customer, revenue, cost, or stakeholder impact.')
@@ -102,7 +105,7 @@ export async function buildSampleWorkbook(context: DatasetContext) {
   const instructions = workbook.addWorksheet('Instructions', { views: [{ showGridLines: false }] })
   instructions.columns = [{ width: 4 }, { width: 105 }]
   instructions.mergeCells('B2:B3')
-  instructions.getCell('B2').value = 'Zobology Core Data Understanding Exercise'
+  instructions.getCell('B2').value = `Zobology ${context.exercise[0].toUpperCase()}${context.exercise.slice(1)} Data Exercise`
   instructions.getCell('B2').font = { bold: true, size: 18, color: { argb: 'FF123C32' } }
   instructions.getCell('B5').value = `Target profile: ${context.role} · ${context.industry} · ${context.level} · ${context.education}`
   instructions.getCell('B5').font = { bold: true, color: { argb: 'FF2E6657' } }
@@ -115,7 +118,7 @@ export async function buildSampleWorkbook(context: DatasetContext) {
 
   const raw = workbook.addWorksheet('Raw Data', { views: [{ state: 'frozen', ySplit: 1 }] })
   raw.columns = columnsFor(context.variant)
-  const seed = seedFor(`${context.role}|${context.industry}|${context.level}`)
+  const seed = seedFor(`${context.role}|${context.industry}|${context.level}|${context.exercise}`)
   const count = rowCount(context.level)
   const units = unitsFor(context.industry)
   for (let index = 0; index < count; index += 1) {

@@ -1139,7 +1139,7 @@ function AdminQuestionPreview() {
         <fieldset><legend>Experience</legend><div className="question-preview-choice"><button className={experienceType === 'fresher' ? 'active' : ''} onClick={() => setExperienceType('fresher')}>Fresher</button><button className={experienceType === 'experienced' ? 'active' : ''} onClick={() => setExperienceType('experienced')}>Experienced</button></div></fieldset>
         {experienceType === 'experienced' && <label><span>Years of experience</span><input type="number" min="1" max="40" step="0.5" value={experienceYears} onChange={(event) => setExperienceYears(event.target.value)} /></label>}
         <label><span>Target level</span><select value={level} onChange={(event) => setLevel(event.target.value)}>{levelOptions.map((item) => <option key={item}>{item}</option>)}</select></label>
-        <div className="question-preview-summary"><strong>{questions.length} questions generated</strong><span>{role.name}</span><span>{industry.name} · {level}</span><span>{education} · {experienceType === 'fresher' ? 'Fresher' : `${experienceYears || '0'} years`}</span></div>
+        <div className="question-preview-summary"><strong>10 questions + 1 separate simulation</strong><span>{role.name}</span><span>{industry.name} · {level}</span><span>{education} · {experienceType === 'fresher' ? 'Fresher' : `${experienceYears || '0'} years`}</span></div>
       </aside>
 
       <section className="question-preview-results">
@@ -1157,7 +1157,7 @@ function AdminQuestionPreview() {
           {displayedQuestions.map((question) => {
             const number = questions.findIndex((item) => item.id === question.id) + 1
             return <article key={question.id} className="question-preview-card">
-              <div className="question-preview-card-head"><span>Question {number}</span><em className={`dimension-chip ${question.dimension}`}>{sectionNames[question.dimension]}</em><small>{question.competency}</small><i>{question.responseType === 'audio' ? 'Audio response' : 'Written response'}</i></div>
+              <div className="question-preview-card-head"><span>{question.dimension === 'simulation' ? 'Separate simulation' : `Question ${number}`}</span><em className={`dimension-chip ${question.dimension}`}>{sectionNames[question.dimension]}</em><small>{question.competency}</small><i>{question.format.replace('_', ' ')}</i></div>
               {question.scenario && <div className="question-preview-scenario"><b>Scenario</b><p>{question.scenario}</p></div>}
               <div className="question-preview-task"><b>Candidate task</b><h3>{question.task ?? question.prompt}</h3></div>
               <div className="question-preview-guidance"><span><b>Answer guidance</b>{question.guidance}</span><span><b>Proficiency</b>{question.proficiency.replace('_', ' ')}</span>{question.sampleData && <span><b>Work sample</b>Excel dataset + workbook upload</span>}</div>

@@ -3,6 +3,7 @@ import { getAssessmentBank, type AssessmentMode, type DiagnosticTag, type Profic
 import type { CandidateProfile } from './reviewTypes'
 
 export type Dimension = 'core' | 'role' | 'industry' | 'simulation'
+export type QuestionFormat = 'audio' | 'excel' | 'written_communication' | 'situational' | 'simulation'
 
 export interface Competency {
   name: string
@@ -38,6 +39,7 @@ export interface Question {
   scenario?: string
   task?: string
   context: string
+  format: QuestionFormat
   responseType: 'written' | 'audio'
   guidance: string
   rubric: string[]
@@ -50,7 +52,7 @@ export interface Question {
 }
 
 export interface SampleDataTask {
-  id: 'core-data-understanding'
+  id: string
   title: string
   description: string
   fileName: string
@@ -384,6 +386,7 @@ function toQuestion(item: QuestionBankItem, occurrence: number): Question {
     scenario: item.scenario,
     task: item.task,
     context: contextLabels[dimension],
+    format: dimension === 'simulation' ? 'simulation' : item.responseType === 'audio' ? 'audio' : 'situational',
     responseType: item.responseType,
     guidance: item.guidance,
     rubric: item.rubric,
@@ -404,14 +407,7 @@ function dataVariant(roleName: string) {
   return 'general'
 }
 
-function addSampleDataTask(questions: Question[], role: RoleFamily, industry: Industry, profile: AssessmentProfile) {
-  const preferredCompetency = /Data|Analyst|Finance|Accounting|Operations|Supply|Marketing|Sales/i.test(role.name)
-    ? 'Analytical Thinking'
-    : 'Numerical Ability'
-  const question = questions.find((item) => item.dimension === 'core' && item.competency === preferredCompetency && item.assessmentModes.includes('application'))
-    ?? questions.find((item) => item.dimension === 'core' && ['Analytical Thinking', 'Numerical Ability'].includes(item.competency))
-  if (!question) return questions
-
+function sampleDataTask(question: Question, role: RoleFamily, industry: Industry, profile: AssessmentProfile): SampleDataTask {
   const variant = dataVariant(role.name)
   const query = new URLSearchParams({
     role: role.name,
@@ -420,36 +416,101 @@ function addSampleDataTask(questions: Question[], role: RoleFamily, industry: In
     education: profile.education,
     experienceType: profile.experienceType,
     variant,
+    exercise: question.dimension,
   })
-  const sampleData: SampleDataTask = {
-    id: 'core-data-understanding',
-    title: `${industry.name} ${role.name} data exercise`,
+  return {
+    id: `${question.dimension}-${question.bankId}`,
+    title: `${industry.name} ${role.name} ${question.dimension} data exercise`,
     description: 'Download the source workbook, complete your analysis in the file, then upload the completed workbook and explain your approach below.',
-    fileName: `zobology-${role.code.toLowerCase()}-${industry.code.toLowerCase()}-data-exercise.xlsx`,
+    fileName: `zobology-${role.code.toLowerCase()}-${industry.code.toLowerCase()}-${question.dimension}-data-exercise.xlsx`,
     downloadUrl: `/api/assessment-data/core-data-understanding?${query.toString()}`,
   }
-  return questions.map((item) => item.id === question.id ? {
-    ...item,
-    prompt: `${item.prompt} Use the attached Excel dataset as your source. Show your calculations or analysis in the workbook, identify the most important patterns, and recommend the next action.`,
-    task: `${item.task ?? item.prompt} Use the attached Excel dataset as your source. Show your calculations or analysis in the workbook, identify the most important patterns, and recommend the next action.`,
-    guidance: `${item.guidance} Submit both the completed workbook and a concise written explanation of your approach, assumptions, findings, and recommendation.`,
-    rubric: [...new Set([...item.rubric, 'Spreadsheet accuracy', 'Data interpretation', 'Method transparency'])],
-    tags: [...new Set([...item.tags, 'excel-work-sample', `data-variant-${variant}`])],
-    sampleData,
-  } : item)
+}
+
+const formatByDimension: Record<Exclude<Dimension, 'simulation'>, QuestionFormat[]> = {
+  core: ['audio', 'excel', 'written_communication'],
+  role: ['audio', 'excel', 'written_communication', 'situational', 'situational'],
+  industry: ['excel', 'situational'],
+}
+
+function applyQuestionFormat(question: Question, format: QuestionFormat, role: RoleFamily, industry: Industry, profile: AssessmentProfile, writtenIndex: number): Question {
+  const tags = [...new Set([...question.tags, `format-${format}`])]
+  if (format === 'audio') {
+    return {
+      ...question,
+      format,
+      responseType: 'audio',
+      assessmentModes: [...new Set<AssessmentMode>([...question.assessmentModes, 'application', 'audio'])],
+      task: `${question.task ?? question.prompt} Record the response as a concise workplace briefing or pitch tailored to a ${role.name}.`,
+      guidance: 'Speak for 60–90 seconds. Lead with the decision or recommendation, support it with the relevant facts, address the audience appropriately, and close with a clear next step.',
+      rubric: [...new Set([...question.rubric, 'Spoken structure', 'Clarity and delivery', 'Audience awareness'])],
+      tags,
+    }
+  }
+  if (format === 'excel') {
+    return {
+      ...question,
+      format,
+      responseType: 'written',
+      task: `${question.task ?? question.prompt} Use the attached Excel dataset as evidence: show your calculations or analysis in the workbook, identify the most important patterns, and recommend the next action.`,
+      guidance: 'Submit the completed workbook and a concise written explanation of your method, assumptions, findings, and recommendation.',
+      rubric: [...new Set([...question.rubric, 'Spreadsheet accuracy', 'Data interpretation', 'Method transparency'])],
+      tags: [...new Set([...tags, 'excel-work-sample', `data-variant-${dataVariant(role.name)}`])],
+      sampleData: sampleDataTask(question, role, industry, profile),
+    }
+  }
+  if (format === 'written_communication') {
+    const isEmail = writtenIndex === 0
+    return {
+      ...question,
+      format,
+      responseType: 'written',
+      task: isEmail
+        ? `Draft a professional email to the key stakeholders in this scenario. Explain the issue using the available facts, state your recommendation, and make the required actions, owners, and timing unmistakably clear.`
+        : `Turn the data points in this scenario into a concise business storyline for leadership: explain what changed, why it matters, the most likely driver, and the decision or action you recommend.`,
+      guidance: isEmail
+        ? 'Write 120–180 words with a useful subject line, audience-appropriate tone, evidence-led message, and explicit call to action.'
+        : 'Write 150–220 words. Build a clear narrative from evidence to insight to business impact and recommendation; do not merely repeat the figures.',
+      rubric: [...new Set([...question.rubric, isEmail ? 'Professional email structure' : 'Data storytelling', 'Audience awareness', 'Action clarity'])],
+      tags,
+    }
+  }
+  return {
+    ...question,
+    format,
+    responseType: 'written',
+    assessmentModes: [...new Set<AssessmentMode>([...question.assessmentModes, 'application'])],
+    task: `${question.task ?? question.prompt} Respond as you would in the real job: make a decision, use the supplied facts, explain your problem-solving approach, and present the recommendation or pitch expected from a ${role.name}.`,
+    guidance: 'Treat this as a role-specific workplace situation. State assumptions, prioritize actions, explain trade-offs, and define a measurable result.',
+    rubric: [...new Set([...question.rubric, 'Role-specific judgement', 'Problem solving', 'Practical recommendation'])],
+    tags,
+  }
+}
+
+function configureQuestionFormats(questions: Question[], role: RoleFamily, industry: Industry, profile: AssessmentProfile) {
+  let writtenIndex = 0
+  return questions.map((question) => {
+    if (question.dimension === 'simulation') return { ...question, format: 'simulation' as const, tags: [...new Set([...question.tags, 'format-simulation'])] }
+    const dimensionQuestions = questions.filter((item) => item.dimension === question.dimension)
+    const position = dimensionQuestions.findIndex((item) => item.id === question.id)
+    const format = formatByDimension[question.dimension][position]
+    const configured = applyQuestionFormat(question, format, role, industry, profile, writtenIndex)
+    if (format === 'written_communication') writtenIndex += 1
+    return configured
+  })
 }
 
 export function buildAssessment(role: RoleFamily, industry: Industry, profile: AssessmentProfile, options: { previousCoreBankIds?: string[] } = {}): Question[] {
   const bank = getAssessmentBank(role.code, industry.code)
-  const core = selectMixed(bank.core, 10, applicationTarget('core', 10, profile), profile, new Set(options.previousCoreBankIds ?? []))
-  const roleItems = selectMixed(bank.role, 8, applicationTarget('role', 8, profile), profile)
-  const industryItems = selectMixed(bank.industry, 5, applicationTarget('industry', 5, profile), profile)
+  const core = selectMixed(bank.core, 3, applicationTarget('core', 3, profile), profile, new Set(options.previousCoreBankIds ?? []))
+  const roleItems = selectMixed(bank.role, 5, applicationTarget('role', 5, profile), profile)
+  const industryItems = selectMixed(bank.industry, 2, applicationTarget('industry', 2, profile), profile)
   const items = [...core, ...roleItems, ...industryItems, ...(bank.simulation ? [bank.simulation] : [])]
   const questions = items
     .map((item) => contextualizeItem(item, role, industry, profile))
     .map((item) => adaptItem(item, profile))
     .map(toQuestion)
-  return addSampleDataTask(questions, role, industry, profile)
+  return configureQuestionFormats(questions, role, industry, profile)
 }
 
 export const educationOptions = [

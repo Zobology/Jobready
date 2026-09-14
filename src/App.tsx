@@ -444,6 +444,8 @@ export function Assessment({
   const question = questions[currentIndex]
   const response = answers[question.id]
   const progress = ((currentIndex + 1) / questions.length) * 100
+  const standardQuestions = questions.filter((item) => item.dimension !== 'simulation')
+  const standardNumber = standardQuestions.findIndex((item) => item.id === question.id) + 1
   const groupIndex = question.dimension === 'core' ? 1 : question.dimension === 'role' ? 2 : question.dimension === 'industry' ? 3 : 4
 
   return (
@@ -476,7 +478,7 @@ export function Assessment({
         <div className="progress-track"><span style={{ width: `${progress}%` }} /></div>
         <div className="question-topline">
           <span className={`dimension-chip ${question.dimension}`}>{dimensionNames[question.dimension]}</span>
-          <span>Question {currentIndex + 1} of {questions.length}</span>
+          <span>{question.dimension === 'simulation' ? 'Separate job simulation' : `Question ${standardNumber} of ${standardQuestions.length}`}</span>
         </div>
 
         <div className="question-card">
