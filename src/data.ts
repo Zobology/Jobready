@@ -537,7 +537,7 @@ function adaptItem(item: QuestionBankItem, profile: AssessmentProfile): Question
       : band === 'associate' ? ['Independent application'] : []
   return {
     ...item,
-    proficiency: band === 'mid' || band === 'senior' ? 'advanced' : band === 'associate' ? 'job_ready' : item.proficiency,
+    proficiency: band === 'senior' ? 'advanced' : band === 'mid' ? 'job_ready' : band === 'associate' ? 'developing' : 'foundation',
     prompt: `${item.prompt} ${levelComplexity[band]}${matchedResumeSignal ? ` Your resume references ${matchedResumeSignal}; use this response to demonstrate the depth of that capability.` : ''}`,
     task: item.task ? `${item.task} ${levelComplexity[band]}${matchedResumeSignal ? ` Your resume references ${matchedResumeSignal}; use this response to demonstrate the depth of that capability.` : ''}` : undefined,
     guidance: `${item.guidance} ${educationExpectation(profile.education)} ${experienceExpectation(profile)}${profile.resumeName ? ' Keep examples consistent with the responsibilities and outcomes represented in your resume.' : ''}`,
@@ -667,42 +667,103 @@ function coreSpokenAudience(role: RoleFamily) {
 
 function contextualCoreWorkSample(question: Question, format: QuestionFormat, role: RoleFamily, industry: Industry, profile: AssessmentProfile) {
   if (question.dimension !== 'core') return question
-  const levelNote = levelComplexity[targetBand(profile.level)]
+  const band = targetBand(profile.level)
   if (format === 'audio') {
     const context = workContext({ id: `${question.bankId}-core-audio` }, role, industry)
-    const scenario = `During ${role.name} work in ${industry.name}, ${context.businessEvidence}. The available report has been checked, but one cause is still unconfirmed. You must update ${coreSpokenAudience(role)} before ${context.deadline}; you own the initial fact check and escalation, not the final approval.`
-    const task = `Record the 60–90 second update you would actually deliver. Lead with the issue and its customer or business impact, use two relevant facts, distinguish what is confirmed from what still needs validation, state the action you have taken, ask for the specific decision or support required, and give the next update time. ${levelNote}`
+    const base = `During ${role.name} work in ${industry.name}, ${context.businessEvidence}. One cause is still unconfirmed.`
+    const levelContent = band === 'entry' ? {
+      scenario: `${base} Your team lead asks for a short update at today’s huddle. Your responsibility is to report the facts you checked, explain the immediate customer or business impact, and flag what needs help; the team lead will decide the response.`,
+      task: 'Record the 45–60 second update you would actually give. State the issue, use two facts from the scenario, explain the immediate impact, mention one check you completed, clearly say what you do not yet know, request the appropriate help or escalation, and give the time of your next update. Do not guess the cause or promise a resolution.',
+      guidance: 'Speak to your team lead in clear, everyday workplace language. We assess accurate reporting and appropriate escalation, not management-level diagnosis.',
+      rubric: ['Spoken clarity', 'Fact accuracy', 'Customer or business impact', 'Limits and uncertainty', 'Appropriate escalation and follow-up'],
+    } : band === 'associate' ? {
+      scenario: `${base} You own the initial assessment and must update ${coreSpokenAudience(role)} before ${context.deadline}. You may recommend an immediate team-level action, but wider commitments require approval.`,
+      task: 'Record a 60–90 second update. Lead with the issue and impact, use two relevant facts, distinguish confirmed evidence from the open question, recommend one immediate action within the team’s control, request the approval or support required, and set the next update time.',
+      guidance: 'Deliver the update as the person independently coordinating the initial response.',
+      rubric: ['Spoken structure', 'Evidence and uncertainty', 'Impact interpretation', 'Practical recommendation', 'Approval ask and follow-up'],
+    } : band === 'mid' ? {
+      scenario: `${base} Several teams are affected and disagree about priority. You must brief ${coreSpokenAudience(role)} before ${context.deadline} and recommend a coordinated response.`,
+      task: 'Record a 60–90 second decision briefing. Frame the issue and impact, interpret the evidence and uncertainty, compare two response options, recommend one with owners and timing, explain the implementation risk, and ask for the required cross-functional decision.',
+      guidance: 'Speak as the manager coordinating action across teams and balancing evidence, delivery, and risk.',
+      rubric: ['Executive structure', 'Evidence interpretation', 'Cross-functional trade-offs', 'Recommendation and ownership', 'Risk and decision clarity'],
+    } : {
+      scenario: `${base} The issue may affect strategic priorities, customer trust, and resource allocation. Senior leadership needs your recommendation before ${context.deadline}.`,
+      task: 'Record a 60–90 second leadership briefing. Frame the strategic implication, distinguish short-term signals from structural risk, present the material options and second-order consequences, recommend a direction and governance owner, and state the executive decision required.',
+      guidance: 'Deliver an executive-level recommendation focused on strategic consequences, governance, and organizational action.',
+      rubric: ['Strategic framing', 'Evidence and structural risk', 'Option trade-offs', 'Governance and ownership', 'Executive recommendation'],
+    }
     return {
       ...question,
-      scenario,
-      task,
-      prompt: `${scenario} ${task}`,
-      guidance: 'Speak in role to the named audience. Do not describe a communication framework; deliver the update clearly and concisely.',
-      rubric: ['Spoken clarity and structure', 'Fact and uncertainty handling', 'Role and industry relevance', 'Ownership', 'Decision ask and next update'],
+      scenario: levelContent.scenario,
+      task: levelContent.task,
+      prompt: `${levelContent.scenario} ${levelContent.task}`,
+      guidance: levelContent.guidance,
+      rubric: levelContent.rubric,
     }
   }
   if (format === 'excel') {
-    const scenario = `The attached workbook contains ${industry.name} performance data by period, region, and operating channel for a ${role.name} team. Volume, completion, capacity, cost, exceptions, and outcome quality do not move in the same direction, and the manager needs a defensible first analysis before deciding where to intervene.`
-    const task = `Use the workbook to calculate ${coreExcelMeasures(role)}. Check totals and formulas, compare at least two channels or regions, identify one pattern and one exception, and recommend the first follow-up question or action supported by the data. ${levelNote}`
+    const base = `The attached workbook contains ${industry.name} performance data by period, region, and operating channel for a ${role.name} team.`
+    const measures = coreExcelMeasures(role)
+    const levelContent = band === 'entry' ? {
+      scenario: `${base} Your supervisor has specified the calculations and wants an accurate summary before deciding whether further investigation is needed.`,
+      task: `Use the workbook to calculate ${measures}. Check totals and formulas, identify the highest and lowest result, compare two channels or regions, flag one unusual value or missing explanation, and write one follow-up question for your supervisor. Do not diagnose the cause from this data alone.`,
+      guidance: 'Show the calculations clearly and submit a short factual summary. You are not expected to choose a cross-functional intervention.',
+      rubric: ['Formula accuracy', 'Basic data checks', 'Correct comparison', 'Issue spotting', 'Appropriate limitation and follow-up question'],
+    } : band === 'associate' ? {
+      scenario: `${base} The manager needs an independently completed analysis and one practical team-level recommendation.`,
+      task: `Calculate ${measures}. Validate totals, compare relevant segments, identify the main pattern and exception, explain the likely operational implication, and recommend one next action within the team’s control with a success measure.`,
+      guidance: 'Show formulas or pivot logic and distinguish calculated evidence from assumptions.',
+      rubric: ['Calculation accuracy', 'Data validation', 'Segment comparison', 'Operational interpretation', 'Practical recommendation'],
+    } : band === 'mid' ? {
+      scenario: `${base} Performance, capacity, cost, and outcome quality point to different priorities, and several teams are competing for limited resources.`,
+      task: `Calculate and validate ${measures}. Segment the drivers, compare two intervention options, quantify the operational and customer trade-offs, recommend a prioritized action with owners, and define leading and outcome measures.`,
+      guidance: 'Build a decision-ready analysis with transparent assumptions, sensitivity, and implementation considerations.',
+      rubric: ['Analytical accuracy', 'Driver segmentation', 'Trade-off analysis', 'Prioritization and ownership', 'Measurement design'],
+    } : {
+      scenario: `${base} Leadership must decide where to allocate resources and whether the pattern signals a structural performance problem.`,
+      task: `Build an executive analysis of ${measures}. Validate metric definitions, isolate structural versus temporary drivers, model at least two resource-allocation scenarios, explain strategic and second-order effects, and recommend governance, investment, and outcome measures.`,
+      guidance: 'Submit an executive-ready workbook and recommendation with assumptions, sensitivities, and decision risks.',
+      rubric: ['Metric governance', 'Structural driver analysis', 'Scenario modelling', 'Strategic resource judgement', 'Executive recommendation'],
+    }
     return {
       ...question,
-      scenario,
-      task,
-      prompt: `${scenario} ${task}`,
-      guidance: 'Submit the completed workbook and a short explanation of your formulas, findings, assumptions, and recommendation.',
-      rubric: ['Formula accuracy', 'Data checks', 'Comparison and pattern recognition', 'Role and industry interpretation', 'Evidence-based next action'],
+      scenario: levelContent.scenario,
+      task: levelContent.task,
+      prompt: `${levelContent.scenario} ${levelContent.task}`,
+      guidance: levelContent.guidance,
+      rubric: levelContent.rubric,
     }
   }
   const context = workContext({ id: `${question.bankId}-core-written` }, role, industry)
-  const scenario = `After a ${role.name} review in ${industry.name}, ${context.businessEvidence}. The discussion ended without a clear written record of the implication, owner, immediate action, or unresolved evidence. The people who need the follow-up are ${context.stakeholders}, and the next decision is due before ${context.deadline}.`
-  const task = `Draft the finished follow-up email. Include a useful subject line, turn the data points into a short evidence-to-impact storyline, state the agreed or recommended action, assign owners and timing, identify the one point still requiring validation, and close with the response or confirmation needed. ${levelNote}`
+  const base = `After a ${role.name} review in ${industry.name}, ${context.businessEvidence}.`
+  const levelContent = band === 'entry' ? {
+    scenario: `${base} Your supervisor asks you to send a short factual recap because the immediate issue and next check were discussed but not written down.`,
+    task: 'Draft the finished email to your supervisor. Include a useful subject line, summarize the two most important facts, explain the immediate customer or business impact, record the action you have already taken, identify what remains unconfirmed, and ask for guidance or approval on the next step. Do not assign work to other teams or state an unverified cause.',
+    guidance: 'Write 100–150 words. We assess accurate, concise workplace writing and appropriate escalation for an entry-level employee.',
+    rubric: ['Purpose and subject line', 'Fact accuracy', 'Impact explanation', 'Action already taken', 'Appropriate request for guidance'],
+  } : band === 'associate' ? {
+    scenario: `${base} The review ended without a clear written record for ${context.stakeholders}, and the next decision is due before ${context.deadline}.`,
+    task: 'Draft the finished follow-up email. Turn the facts into a concise evidence-to-impact storyline, recommend one immediate action, propose owners and timing, identify what still needs validation, and close with the confirmations required.',
+    guidance: 'Write 120–180 words as the person independently coordinating the follow-up.',
+    rubric: ['Purpose and audience', 'Evidence-to-impact storyline', 'Practical recommendation', 'Proposed ownership and timing', 'Clear confirmation request'],
+  } : band === 'mid' ? {
+    scenario: `${base} Cross-functional teams interpret the impact differently, ownership is unresolved, and a corrective decision is due before ${context.deadline}.`,
+    task: 'Draft the finished cross-functional decision email. Synthesize the evidence and implications, resolve or expose the trade-off, recommend the action, assign accountable owners and milestones, document risks and dependencies, and request the decisions required.',
+    guidance: 'Write a concise management communication that enables coordinated execution.',
+    rubric: ['Synthesis and implications', 'Trade-off clarity', 'Recommendation quality', 'Ownership and dependencies', 'Decision request'],
+  } : {
+    scenario: `${base} The pattern may affect strategic commitments and resource allocation, and leadership needs a documented position before ${context.deadline}.`,
+    task: 'Draft the executive decision note. Frame the strategic implication, distinguish short-term evidence from structural concern, present the principal options and second-order effects, recommend direction and governance, and specify the leadership decisions and communication required.',
+    guidance: 'Write an executive-ready note focused on enterprise impact, governance, and strategic choice.',
+    rubric: ['Strategic synthesis', 'Evidence and uncertainty', 'Option consequences', 'Governance recommendation', 'Executive decision clarity'],
+  }
   return {
     ...question,
-    scenario,
-    task,
-    prompt: `${scenario} ${task}`,
-    guidance: 'Write 120–180 words in an audience-appropriate tone. Submit the email itself, not an explanation of how you would write it.',
-    rubric: ['Purpose and audience', 'Evidence-to-impact storyline', 'Role and industry relevance', 'Ownership and timing', 'Clear call to action'],
+    scenario: levelContent.scenario,
+    task: levelContent.task,
+    prompt: `${levelContent.scenario} ${levelContent.task}`,
+    guidance: levelContent.guidance,
+    rubric: levelContent.rubric,
   }
 }
 

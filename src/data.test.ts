@@ -69,12 +69,14 @@ test('builds distinct role-and-industry-specific Core audio, Excel, and written 
   assert.ok(core.every((question) => /Customer Experience/i.test(question.scenario ?? '')))
   assert.ok(core.every((question) => /Fashion \/ Apparel/i.test(question.scenario ?? '')))
   assert.equal(new Set(core.map((question) => `${question.scenario}\n${question.task}`)).size, 3)
-  assert.match(core[0].task!, /update you would actually deliver/i)
-  assert.match(core[0].guidance, /do not describe a communication framework/i)
+  assert.match(core[0].task!, /update you would actually give/i)
+  assert.match(core[0].task!, /do not guess the cause/i)
   assert.match(core[1].task!, /resolution rate, escalation rate, contacts per unit of capacity/i)
+  assert.match(core[1].task!, /write one follow-up question for your supervisor/i)
   assert.ok(core[1].sampleData)
-  assert.match(core[2].task!, /finished follow-up email/i)
-  assert.match(core[2].task!, /evidence-to-impact storyline/i)
+  assert.match(core[2].task!, /finished email to your supervisor/i)
+  assert.match(core[2].task!, /do not assign work to other teams/i)
+  assert.ok(core.every((question) => question.proficiency === 'foundation'))
 
   const coreExcelTask = (roleName: string) => {
     const selectedRole = roles.find((item) => item.name === roleName)!
@@ -83,6 +85,35 @@ test('builds distinct role-and-industry-specific Core audio, Excel, and written 
   assert.match(coreExcelTask('Talent Acquisition'), /applicant-to-hire rate/i)
   assert.match(coreExcelTask('Software Development'), /defects or incidents per completed item/i)
   assert.match(coreExcelTask('Supply Chain'), /capacity utilization, exception rate/i)
+})
+
+test('changes Core responsibility and difficulty materially by target level', () => {
+  const role = roles.find((item) => item.name === 'Customer Experience')!
+  const industry = industries.find((item) => item.name === 'E-commerce')!
+  const coreAt = (level: string) => buildAssessment(role, industry, { ...profile, level }).filter((question) => question.dimension === 'core')
+  const entry = coreAt('Entry level')
+  const associate = coreAt('Associate')
+  const mid = coreAt('Mid-level')
+  const senior = coreAt('Senior')
+
+  assert.ok(entry.every((question) => question.proficiency === 'foundation'))
+  assert.match(entry[0].scenario!, /team lead asks for a short update/i)
+  assert.match(entry[1].guidance, /not expected to choose a cross-functional intervention/i)
+  assert.match(entry[2].task!, /ask for guidance or approval/i)
+  assert.ok(entry.every((question) => !/assign accountable owners|resource-allocation scenarios|strategic implication/i.test(question.task ?? '')))
+
+  assert.ok(associate.every((question) => question.proficiency === 'developing'))
+  assert.match(associate[0].task!, /recommend one immediate action within the team’s control/i)
+  assert.match(associate[1].task!, /one next action within the team’s control/i)
+
+  assert.ok(mid.every((question) => question.proficiency === 'job_ready'))
+  assert.match(mid[0].task!, /compare two response options/i)
+  assert.match(mid[2].task!, /assign accountable owners and milestones/i)
+
+  assert.ok(senior.every((question) => question.proficiency === 'advanced'))
+  assert.match(senior[0].task!, /strategic implication/i)
+  assert.match(senior[1].task!, /resource-allocation scenarios/i)
+  assert.match(senior[2].task!, /governance/i)
 })
 
 test('builds distinct and realistic entry-level B2C Sales work samples for EdTech', () => {
@@ -211,7 +242,7 @@ test('generates usable, distinct work samples for every role, industry, and leve
           const text = `${question.scenario} ${question.task}`
           if (!question.scenario || question.scenario.length < 100) failures.push(`${label}: ${question.bankId} lacks a concrete scenario`)
           if (!question.task || question.task.length < 100) failures.push(`${label}: ${question.bankId} lacks a concrete task`)
-          if (!expectedLevelLanguage[levelIndex].test(question.task ?? '')) failures.push(`${label}: ${question.bankId} lacks level boundary`)
+          if (question.dimension !== 'core' && !expectedLevelLanguage[levelIndex].test(question.task ?? '')) failures.push(`${label}: ${question.bankId} lacks level boundary`)
           if (bannedGenericLanguage.some((pattern) => pattern.test(text))) failures.push(`${label}: ${question.bankId} uses banned generic wording`)
           if (question.prompt !== `${question.scenario} ${question.task}`) failures.push(`${label}: ${question.bankId} prompt is not synchronized`)
         }
