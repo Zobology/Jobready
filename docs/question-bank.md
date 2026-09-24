@@ -17,6 +17,7 @@ An assembled assessment draws 3 core items, 5 role items, 2 industry items, and 
 ## Work-sample design rules
 
 - Response formats are matched to observable capabilities instead of being assigned only by question order. For example, a sales assessment uses audio for persuasion, Excel for conversion analysis, and written communication for customer follow-up.
+- The three Core questions are independently contextualized to the selected role and industry: a delivered spoken update, a foundational Excel analysis with role-relevant measures, and a finished evidence-led workplace email. They do not reuse the same generic prompt across job profiles.
 - Questions in one assessment must require different work outputs; changing only the competency label or wording is not a distinct question.
 - Scenarios state the information, constraints, authority, audience, and expected output needed to answer without inventing an entire workplace context.
 - Entry-level tasks focus on execution within the candidate's authority and make approval or escalation explicit. Higher levels add independent ownership, trade-offs, governance, and strategic impact.

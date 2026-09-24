@@ -60,6 +60,31 @@ test('allocates each response format to the requested dimensions', () => {
   assert.deepEqual(dimensionsFor('situational'), ['role', 'role', 'industry'])
 })
 
+test('builds distinct role-and-industry-specific Core audio, Excel, and written evidence', () => {
+  const role = roles.find((item) => item.name === 'Customer Experience')!
+  const industry = industries.find((item) => item.name === 'Fashion / Apparel')!
+  const core = buildAssessment(role, industry, profile).filter((question) => question.dimension === 'core')
+
+  assert.deepEqual(core.map((question) => question.format), ['audio', 'excel', 'written_communication'])
+  assert.ok(core.every((question) => /Customer Experience/i.test(question.scenario ?? '')))
+  assert.ok(core.every((question) => /Fashion \/ Apparel/i.test(question.scenario ?? '')))
+  assert.equal(new Set(core.map((question) => `${question.scenario}\n${question.task}`)).size, 3)
+  assert.match(core[0].task!, /update you would actually deliver/i)
+  assert.match(core[0].guidance, /do not describe a communication framework/i)
+  assert.match(core[1].task!, /resolution rate, escalation rate, contacts per unit of capacity/i)
+  assert.ok(core[1].sampleData)
+  assert.match(core[2].task!, /finished follow-up email/i)
+  assert.match(core[2].task!, /evidence-to-impact storyline/i)
+
+  const coreExcelTask = (roleName: string) => {
+    const selectedRole = roles.find((item) => item.name === roleName)!
+    return buildAssessment(selectedRole, industry, profile).find((question) => question.dimension === 'core' && question.format === 'excel')!.task!
+  }
+  assert.match(coreExcelTask('Talent Acquisition'), /applicant-to-hire rate/i)
+  assert.match(coreExcelTask('Software Development'), /defects or incidents per completed item/i)
+  assert.match(coreExcelTask('Supply Chain'), /capacity utilization, exception rate/i)
+})
+
 test('builds distinct and realistic entry-level B2C Sales work samples for EdTech', () => {
   const role = roles.find((item) => item.name === 'B2C Sales')!
   const industry = industries.find((item) => item.name === 'EdTech')!
@@ -146,7 +171,7 @@ test('generates usable, distinct work samples for every role, industry, and leve
       levels.forEach((level, levelIndex) => {
         const questions = buildAssessment(role, industry, { ...profile, level })
         const standard = questions.filter((question) => question.dimension !== 'simulation')
-        const tailored = questions.filter((question) => question.dimension !== 'core')
+        const tailored = questions
         const label = `${role.name} × ${industry.name} × ${level}`
         const formatCounts = standard.reduce<Partial<Record<QuestionFormat, number>>>((counts, question) => {
           counts[question.format] = (counts[question.format] ?? 0) + 1

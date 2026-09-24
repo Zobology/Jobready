@@ -292,14 +292,14 @@ function contextualStakeholders(family: string, industry: Industry, fallback: st
   return fallback
 }
 
-function workContext(item: QuestionBankItem, role: RoleFamily, industry: Industry) {
+function workContext(item: Pick<QuestionBankItem, 'id'>, role: RoleFamily, industry: Industry) {
   const family = roleContextFamily(role.name)
   const contexts = workContexts[roleContextFamily(role.name)] ?? workContexts.general
   const selected = contexts[stableIndex(`${item.id}-${role.code}`, contexts.length)]
   return { ...selected, stakeholders: contextualStakeholders(family, industry, selected.stakeholders) }
 }
 
-function industryAreas(industry: Industry, item: QuestionBankItem) {
+function industryAreas(industry: Industry, item: Pick<QuestionBankItem, 'id'>) {
   const first = industry.contexts[stableIndex(item.id, industry.contexts.length)] ?? industry.focus
   const second = industry.contexts[stableIndex(`${item.id}-secondary`, industry.contexts.length)] ?? industry.focus
   return first === second ? first : `${first} and ${second}`
@@ -642,6 +642,70 @@ function assignRoleFormats(questions: Question[]) {
   return new Map(bestOrder.map((questionIndex, slotIndex) => [questions[questionIndex].id, formats[slotIndex]]))
 }
 
+function coreExcelMeasures(role: RoleFamily) {
+  const variant = dataVariant(role.name)
+  if (variant === 'commercial') return 'conversion rate, exception or cancellation rate, cost per completed outcome, and revenue per completed outcome'
+  if (variant === 'operations') return 'completion rate, capacity utilization, exception rate, and cost per completed unit'
+  if (variant === 'people') return 'applicant-to-hire rate, exits as a share of headcount, cost per hire, and engagement by segment'
+  if (variant === 'customer') return 'resolution rate, escalation rate, contacts per unit of capacity, and cost per resolved contact'
+  if (variant === 'technology') return 'completion rate, defects or incidents per completed item, capacity utilization, and cost per completed item'
+  return 'completion rate, exception rate, capacity utilization, and cost per completed outcome'
+}
+
+function coreSpokenAudience(role: RoleFamily) {
+  const family = roleContextFamily(role.name)
+  if (family === 'commercial') return 'your team lead before a customer or commercial decision'
+  if (family === 'service') return 'the service lead coordinating the customer response'
+  if (family === 'people') return 'the manager responsible for the employee or candidate decision'
+  if (family === 'technology') return 'the product or incident lead deciding the next action'
+  if (family === 'operations') return 'the operations lead running the next review'
+  if (family === 'governance') return 'the control or policy owner deciding whether work may proceed'
+  if (family === 'communications') return 'the accountable leader approving the stakeholder message'
+  if (family === 'advisory') return 'the project lead preparing the client recommendation'
+  return 'the manager who must coordinate the next action'
+}
+
+function contextualCoreWorkSample(question: Question, format: QuestionFormat, role: RoleFamily, industry: Industry, profile: AssessmentProfile) {
+  if (question.dimension !== 'core') return question
+  const levelNote = levelComplexity[targetBand(profile.level)]
+  if (format === 'audio') {
+    const context = workContext({ id: `${question.bankId}-core-audio` }, role, industry)
+    const scenario = `During ${role.name} work in ${industry.name}, ${context.businessEvidence}. The available report has been checked, but one cause is still unconfirmed. You must update ${coreSpokenAudience(role)} before ${context.deadline}; you own the initial fact check and escalation, not the final approval.`
+    const task = `Record the 60–90 second update you would actually deliver. Lead with the issue and its customer or business impact, use two relevant facts, distinguish what is confirmed from what still needs validation, state the action you have taken, ask for the specific decision or support required, and give the next update time. ${levelNote}`
+    return {
+      ...question,
+      scenario,
+      task,
+      prompt: `${scenario} ${task}`,
+      guidance: 'Speak in role to the named audience. Do not describe a communication framework; deliver the update clearly and concisely.',
+      rubric: ['Spoken clarity and structure', 'Fact and uncertainty handling', 'Role and industry relevance', 'Ownership', 'Decision ask and next update'],
+    }
+  }
+  if (format === 'excel') {
+    const scenario = `The attached workbook contains ${industry.name} performance data by period, region, and operating channel for a ${role.name} team. Volume, completion, capacity, cost, exceptions, and outcome quality do not move in the same direction, and the manager needs a defensible first analysis before deciding where to intervene.`
+    const task = `Use the workbook to calculate ${coreExcelMeasures(role)}. Check totals and formulas, compare at least two channels or regions, identify one pattern and one exception, and recommend the first follow-up question or action supported by the data. ${levelNote}`
+    return {
+      ...question,
+      scenario,
+      task,
+      prompt: `${scenario} ${task}`,
+      guidance: 'Submit the completed workbook and a short explanation of your formulas, findings, assumptions, and recommendation.',
+      rubric: ['Formula accuracy', 'Data checks', 'Comparison and pattern recognition', 'Role and industry interpretation', 'Evidence-based next action'],
+    }
+  }
+  const context = workContext({ id: `${question.bankId}-core-written` }, role, industry)
+  const scenario = `After a ${role.name} review in ${industry.name}, ${context.businessEvidence}. The discussion ended without a clear written record of the implication, owner, immediate action, or unresolved evidence. The people who need the follow-up are ${context.stakeholders}, and the next decision is due before ${context.deadline}.`
+  const task = `Draft the finished follow-up email. Include a useful subject line, turn the data points into a short evidence-to-impact storyline, state the agreed or recommended action, assign owners and timing, identify the one point still requiring validation, and close with the response or confirmation needed. ${levelNote}`
+  return {
+    ...question,
+    scenario,
+    task,
+    prompt: `${scenario} ${task}`,
+    guidance: 'Write 120–180 words in an audience-appropriate tone. Submit the email itself, not an explanation of how you would write it.',
+    rubric: ['Purpose and audience', 'Evidence-to-impact storyline', 'Role and industry relevance', 'Ownership and timing', 'Clear call to action'],
+  }
+}
+
 function consumerOffering(industry: Industry) {
   if (/education|edtech|learning/i.test(industry.name)) return 'a ₹48,000, 16-week data-analytics certificate with weekend classes and career support'
   if (/bank|financial|fintech|insurance/i.test(industry.name)) return 'a consumer financial product with a monthly fee and eligibility conditions'
@@ -923,7 +987,7 @@ function realisticSimulation(question: Question, role: RoleFamily, industry: Ind
 function applyQuestionFormat(question: Question, format: QuestionFormat, role: RoleFamily, industry: Industry, profile: AssessmentProfile, writtenIndex: number): Question {
   const tags = [...new Set([...question.tags, `format-${format}`])]
   if (format === 'audio') {
-    return realisticRoleWorkSample({
+    const configured: Question = {
       ...question,
       format,
       responseType: 'audio',
@@ -932,7 +996,10 @@ function applyQuestionFormat(question: Question, format: QuestionFormat, role: R
       guidance: 'Speak for 60–90 seconds. Lead with the decision or recommendation, support it with the relevant facts, address the audience appropriately, and close with a clear next step.',
       rubric: [...new Set([...question.rubric, 'Spoken structure', 'Clarity and delivery', 'Audience awareness'])],
       tags,
-    }, format, role, industry, profile, writtenIndex)
+    }
+    return question.dimension === 'core'
+      ? contextualCoreWorkSample(configured, format, role, industry, profile)
+      : realisticRoleWorkSample(configured, format, role, industry, profile, writtenIndex)
   }
   if (format === 'excel') {
     const configured: Question = {
@@ -945,13 +1012,14 @@ function applyQuestionFormat(question: Question, format: QuestionFormat, role: R
       tags: [...new Set([...tags, 'excel-work-sample', `data-variant-${dataVariant(role.name)}`])],
       sampleData: sampleDataTask(question, role, industry, profile),
     }
+    if (question.dimension === 'core') return contextualCoreWorkSample(configured, format, role, industry, profile)
     return question.dimension === 'industry'
       ? contextualIndustryWorkSample(configured, format, role, industry, profile)
       : realisticRoleWorkSample(configured, format, role, industry, profile, writtenIndex)
   }
   if (format === 'written_communication') {
     const isEmail = writtenIndex === 0
-    return realisticRoleWorkSample({
+    const configured: Question = {
       ...question,
       format,
       responseType: 'written',
@@ -963,7 +1031,10 @@ function applyQuestionFormat(question: Question, format: QuestionFormat, role: R
         : 'Write 150–220 words. Build a clear narrative from evidence to insight to business impact and recommendation; do not merely repeat the figures.',
       rubric: [...new Set([...question.rubric, isEmail ? 'Professional email structure' : 'Data storytelling', 'Audience awareness', 'Action clarity'])],
       tags,
-    }, format, role, industry, profile, writtenIndex)
+    }
+    return question.dimension === 'core'
+      ? contextualCoreWorkSample(configured, format, role, industry, profile)
+      : realisticRoleWorkSample(configured, format, role, industry, profile, writtenIndex)
   }
   const configured: Question = {
     ...question,
@@ -975,6 +1046,7 @@ function applyQuestionFormat(question: Question, format: QuestionFormat, role: R
     rubric: [...new Set([...question.rubric, 'Role-specific judgement', 'Problem solving', 'Practical recommendation'])],
     tags,
   }
+  if (question.dimension === 'core') return contextualCoreWorkSample(configured, format, role, industry, profile)
   return question.dimension === 'industry'
     ? contextualIndustryWorkSample(configured, format, role, industry, profile)
     : realisticRoleWorkSample(configured, format, role, industry, profile, writtenIndex)
