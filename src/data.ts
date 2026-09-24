@@ -749,9 +749,104 @@ function b2cSalesWorkSample(question: Question, format: QuestionFormat, role: Ro
   return { ...question, scenario, task, prompt: `${scenario} ${task}`, guidance }
 }
 
+type CustomerExperienceCase = {
+  journey: string
+  voc: string
+  recovery: string
+  empathy: string
+  excelContext: string
+}
+
+function customerExperienceCase(industry: Industry): CustomerExperienceCase {
+  if (/fashion|apparel/i.test(industry.name)) return {
+    journey: 'A customer ordered two outfits in the mobile app for a family event. The parcel arrived three days late, one item’s size label does not match the order, and a store refused the exchange because it was purchased online. The customer has already repeated the details in chat and by phone, and the event is four days away.',
+    voc: 'In the latest 50 post-return comments, 18 customers mention inconsistent sizing, 12 say product colour or fabric differed from the online description, 9 mention poor refund updates, and 11 describe other issues. The return rate increased from 16% to 23%, but return-reason codes are incomplete and no conclusion has been validated.',
+    recovery: 'A customer paid ₹6,800 for an outfit that arrived damaged. A promised replacement was not dispatched, the return was collected, and the refund has now been pending for eight days. The customer has posted publicly and says this is their final attempt before filing a complaint. You can expedite an existing refund request but need manager approval for goodwill above ₹1,000.',
+    empathy: 'An upset customer calls and says: “This is the third time I have explained this. My outfit arrived damaged, nobody can tell me where my refund is, and the event I bought it for has already passed. Why should I ever shop with you again?” The account confirms the return was collected, but the refund status has not updated.',
+    excelContext: 'a Fashion/Apparel customer-service operation covering orders, exchanges, returns, and store or digital support',
+  }
+  if (/Higher Education|K-12|EdTech|Vocational/i.test(industry.name)) return {
+    journey: `A learner enrolled in ${/^[aeiou]/i.test(industry.name) ? 'an' : 'a'} ${industry.name} program after being told that weekend sessions were available. Payment is complete, but the learning account is still inactive, the first live class is in four days, and chat and phone support have each asked the learner to resubmit the same receipt without confirming an owner.`,
+    voc: 'In the latest 50 learner comments, 17 mention delayed account activation, 13 mention timetable or counsellor information that did not match the delivered program, 9 mention poor refund-status updates, and 11 describe other issues. Early-course engagement fell by 7 percentage points, but issue codes are incomplete.',
+    recovery: 'A learner paid for a program, could not access the first two live sessions, and was promised activation within 24 hours. Five days later the account is still inactive and a requested refund has no owner. The learner has posted publicly and says they will raise a payment dispute. You can escalate activation or an existing refund, but any goodwill exception needs manager approval.',
+    empathy: 'An upset learner says: “I enrolled because I was told I could attend weekend classes. I have missed two sessions, support keeps asking for the same payment receipt, and nobody will tell me whether I will get access or a refund. Why should I trust this program?” The payment is visible, but activation ownership is unclear.',
+    excelContext: `${industry.name} learner support covering enrolment, account activation, learning access, and refunds`,
+  }
+  if (/Insurance/i.test(industry.name)) return {
+    journey: 'A policyholder submitted a claim with the requested documents, but the mobile app shows “under review,” the call centre says one document is missing, and the branch says the file is complete. The policyholder has repeated the claim details twice and needs a decision before a hospital payment is due in four days.',
+    voc: 'In the latest 50 claims-service comments, 16 mention unclear document requirements, 14 mention no proactive status update, 8 mention inconsistent information across app, branch, and call centre, and 12 describe other issues. Repeat contacts increased by 7 percentage points, but complaint coding is incomplete.',
+    recovery: 'A policyholder submitted a valid claim, supplied an additional document when requested, and was promised an update within 48 hours. Eight days later there is no decision and the provider requires payment. You can request urgent claim review but cannot approve the claim or a financial exception.',
+    empathy: 'A policyholder says: “My family is dealing with a medical emergency and I have explained this claim three times. The app, branch, and call centre all tell me something different. I need to know what is actually happening.” The claim is open, but document status conflicts across systems.',
+    excelContext: 'an Insurance customer-service operation covering policy servicing, claims, document requests, and escalations',
+  }
+  if (/Banking|NBFC|FinTech|Payments|Investment|Capital Markets/i.test(industry.name)) return {
+    journey: 'A customer initiated a digital transaction that was debited but not completed. The app says it will reverse automatically, chat gave a two-day timeline, and phone support gave a seven-day timeline. The customer has repeated the transaction details twice and needs the funds for a time-sensitive payment in four days.',
+    voc: 'In the latest 50 service comments, 18 mention unclear transaction status, 12 mention inconsistent resolution timelines, 9 mention repeated identity or document requests, and 11 describe other issues. Repeat-contact rate rose by 7 percentage points, but reason codes are incomplete.',
+    recovery: 'A customer’s transaction was debited without successful completion. An automatic reversal was promised within two days, but eight days have passed and no case owner is visible. The customer has raised the issue publicly. You can escalate transaction tracing but cannot credit funds or promise a reversal date.',
+    empathy: 'An upset customer says: “The money left my account eight days ago, the payment failed, and every channel gives me a different answer. I need those funds for an urgent payment. What are you actually going to do?” The transaction reference exists, but reversal status is not confirmed.',
+    excelContext: `${industry.name} customer support covering transactions, account servicing, complaints, and escalations`,
+  }
+  if (/Hospital|Pharma|Medical|Health|Diagnostic/i.test(industry.name)) return {
+    journey: 'A patient completed a diagnostic visit and was told the report would be available in 48 hours. The app shows no report, the contact centre says the sample is processing, and the clinic says it was sent for review. The patient has repeated the details twice and has a specialist appointment in four days.',
+    voc: 'In the latest 50 patient comments, 17 mention report or appointment delays, 13 mention conflicting status information, 9 mention billing or refund updates, and 11 describe other issues. Repeat contacts increased by 7 percentage points, but issue coding is incomplete.',
+    recovery: 'A patient paid for a scheduled service that was cancelled after arrival. A priority rebooking and refund update were promised, but neither has an owner after eight days. The patient needs continuity of care. You may coordinate an urgent service review but cannot make a clinical decision or approve compensation.',
+    empathy: 'An upset patient says: “I have a specialist appointment in four days, but nobody can tell me where my report is. I have already called twice and received different answers. I need a clear update, not another promise.” The visit is recorded, but report status is inconsistent.',
+    excelContext: `${industry.name} patient-service support covering appointments, reports, billing, and service recovery`,
+  }
+  if (/Software|IT Services|AI \/ Data|Cybersecurity|Hardware|Cloud/i.test(industry.name)) return {
+    journey: 'A new customer completed purchase and onboarding but cannot activate a required feature. In-app support points to account permissions, chat says configuration is incomplete, and the account manager says access should already work. The customer has repeated the setup details twice and has a team launch in four days.',
+    voc: 'In the latest 50 user comments, 18 mention activation or permission problems, 12 mention onboarding guidance that does not match the product, 9 mention billing or cancellation updates, and 11 describe other issues. Successful onboarding fell by 7 percentage points, but reason codes are incomplete.',
+    recovery: 'A customer lost access to a paid feature after an account change. Restoration was promised within 24 hours, but the issue remains unresolved after five days and a billing adjustment has no owner. You can escalate access restoration but cannot promise engineering timing or approve a credit.',
+    empathy: 'An upset customer says: “We launch in four days and I still cannot use the feature we paid for. Support and our account manager keep sending me to each other. I need one owner and a real update.” The entitlement exists, but permission status is inconsistent.',
+    excelContext: `${industry.name} customer support covering onboarding, access, incidents, billing, and retention`,
+  }
+  if (/E-commerce|Retail|FMCG|Consumer|Beauty|Food/i.test(industry.name)) return {
+    journey: 'A customer placed an online order for a time-sensitive occasion. Delivery was late, one item did not match the listing, and a store or partner channel refused the return. The customer has repeated the order details twice and needs a resolution in four days.',
+    voc: 'In the latest 50 order and return comments, 18 mention product-description mismatch, 12 mention delivery delays, 9 mention poor refund updates, and 11 describe other issues. Return rate increased by 7 percentage points, but reason codes are incomplete.',
+    recovery: 'A customer received a damaged order, a promised replacement was not dispatched, and the collected return has had no refund update for eight days. The customer has posted publicly. You can expedite the existing case but need approval for an additional goodwill exception.',
+    empathy: 'An upset customer says: “The order arrived damaged, the replacement never came, and nobody can tell me where my refund is. I have explained this three times. Why should I buy from you again?” The return is recorded, but refund status is unclear.',
+    excelContext: `${industry.name} customer support covering orders, delivery, returns, refunds, and channel handoffs`,
+  }
+  if (/Logistics|Courier|Aviation|Rail|Shipping|Travel/i.test(industry.name)) return {
+    journey: 'A customer’s booking or shipment missed the confirmed milestone. Tracking, the contact centre, and the operating partner show different status information. The customer has repeated the reference details twice and needs the journey or delivery completed within four days.',
+    voc: 'In the latest 50 customer comments, 18 mention inaccurate status or tracking, 12 mention missed milestones, 9 mention poor cancellation or refund updates, and 11 describe other issues. Repeat contacts increased by 7 percentage points, but reason codes are incomplete.',
+    recovery: 'A confirmed booking or shipment failed after the customer had already travelled or arranged receipt. A recovery and refund update were promised, but eight days later neither has a clear owner. You can coordinate the recovery case but cannot promise partner capacity or approve a large exception.',
+    empathy: 'An upset customer says: “I planned around your confirmed timing, it failed, and every channel gives me a different status. I have explained this three times. What will you do now?” The reference is valid, but the operating partner has not confirmed the next milestone.',
+    excelContext: `${industry.name} customer support covering bookings or shipments, status updates, disruptions, refunds, and recovery`,
+  }
+  if (/Telecom|Media|Entertainment|Advertising|Gaming/i.test(industry.name)) return {
+    journey: 'A subscriber was charged successfully but cannot access the expected service or content. Self-service, chat, and phone support show different entitlement status. The subscriber has repeated the details twice and needs access restored before a time-sensitive event in four days.',
+    voc: 'In the latest 50 subscriber comments, 18 mention access or service-quality problems, 12 mention confusing plan information, 9 mention cancellation or refund updates, and 11 describe other issues. Repeat contacts increased by 7 percentage points, but reason codes are incomplete.',
+    recovery: 'A subscriber lost paid access, restoration was promised within 24 hours, and the issue remains unresolved after five days. A billing adjustment also has no owner. You can escalate service restoration but cannot promise technical timing or approve a large credit.',
+    empathy: 'An upset subscriber says: “I paid for this service, I still cannot use it, and support keeps giving me different instructions. I have explained it three times. Why should I stay?” The account is active, but entitlement or service status is inconsistent.',
+    excelContext: `${industry.name} subscriber support covering access, service quality, billing, cancellation, and retention`,
+  }
+  if (/Hotel|Restaurant|Hospitality|Sports/i.test(industry.name)) return {
+    journey: 'A guest or member has a confirmed booking, but the venue cannot provide the reserved service and two channels offered different alternatives. The customer has repeated the details twice and the booking is in four days.',
+    voc: 'In the latest 50 guest or member comments, 18 mention booking accuracy, 12 mention inconsistent service information, 9 mention cancellation or refund updates, and 11 describe other issues. Repeat contacts increased by 7 percentage points, but reason codes are incomplete.',
+    recovery: 'A confirmed service was unavailable on arrival and a recovery or refund was promised. Eight days later the case has no clear owner and the customer has posted publicly. You can arrange a standard recovery option but need approval for a larger exception.',
+    empathy: 'An upset customer says: “I had a confirmed booking, the service was not available, and I have explained this three times without a clear recovery or refund. Why should I return?” The booking is valid, but recovery ownership is unclear.',
+    excelContext: `${industry.name} guest or member support covering bookings, service delivery, recovery, refunds, and loyalty`,
+  }
+  if (/Government|NGO/i.test(industry.name)) return {
+    journey: 'A citizen or beneficiary submitted a complete service request, but the portal, contact centre, and local office show different status information. They have repeated the details twice and need the service before a time-sensitive deadline in four days.',
+    voc: 'In the latest 50 citizen or beneficiary comments, 18 mention unclear eligibility or status, 12 mention repeated document requests, 9 mention accessibility or response delays, and 11 describe other issues. Repeat contacts increased by 7 percentage points, but reason codes are incomplete.',
+    recovery: 'A citizen or beneficiary completed the required process and was promised a decision or service update, but eight days later no owner is visible. The deadline affects access to an essential service. You can escalate the case but cannot bypass eligibility or approval requirements.',
+    empathy: 'An upset citizen or beneficiary says: “I submitted everything requested, I have explained this three times, and each office gives me a different answer. The deadline is close. Who is taking responsibility?” The request exists, but ownership is unclear.',
+    excelContext: `${industry.name} service support covering applications, status, documentation, accessibility, and escalation`,
+  }
+  return {
+    journey: `A client requested a ${industry.name} service and supplied the required information, but two teams gave conflicting status updates and a promised milestone was missed. The client has repeated the details twice and needs a confirmed resolution path in four days.`,
+    voc: `In the latest 50 client comments, 18 mention unclear status, 12 mention inconsistent scope or delivery information, 9 mention billing or closure updates, and 11 describe other issues. Repeat contacts increased by 7 percentage points, but reason codes are incomplete.`,
+    recovery: `A client paid for or approved a ${industry.name} service, but a promised deliverable or correction did not occur and the case has had no owner for eight days. You can coordinate urgent review but cannot promise the final technical, commercial, or approval outcome.`,
+    empathy: `An upset client says: “I have explained this three times, the promised delivery or correction has not happened, and every team gives me a different answer. I need one owner and a reliable update.” The request exists, but responsibility is unclear.`,
+    excelContext: `${industry.name} client support covering requests, delivery status, exceptions, billing, and recovery`,
+  }
+}
+
 function customerExperienceWorkSample(question: Question, role: RoleFamily, industry: Industry, profile: AssessmentProfile) {
   if (role.name !== 'Customer Experience' || question.dimension !== 'role') return question
-  const fashion = /fashion|apparel/i.test(industry.name)
+  const customerCase = customerExperienceCase(industry)
   const levelNote = levelComplexity[targetBand(profile.level)]
   let scenario: string
   let task: string
@@ -759,37 +854,27 @@ function customerExperienceWorkSample(question: Question, role: RoleFamily, indu
   let rubric: string[]
 
   if (/customer journey/i.test(question.competency)) {
-    scenario = fashion
-      ? 'A customer ordered two outfits in the mobile app for a family event. The parcel arrived three days late, one item’s size label does not match the order, and a store refused the exchange because it was purchased online. The customer has already repeated the details in chat and by phone, and the event is four days away.'
-      : `A customer using ${industry.contexts[0]?.toLowerCase() ?? industry.focus} received conflicting guidance in two channels, repeated the same information twice, and still has no confirmed resolution. The customer has a time-sensitive need in four days.`
+    scenario = customerCase.journey
     task = `Write the reply you would send to the customer now, then add a short internal handoff note. The reply must acknowledge the experience, confirm what you understand, avoid an unsupported promise, and give a specific next update time. The handoff must identify the broken journey step, the team that should act next, the information they need, and how you will close the loop with the customer. ${levelNote}`
     guidance = 'Write the finished customer message first and the internal handoff second, using no more than 200 words in total.'
     rubric = ['Customer acknowledgement', 'Accurate issue summary', 'Ownership and expectation setting', 'Cross-functional handoff', 'Closed-loop follow-up']
   } else if (/^voc$/i.test(question.competency)) {
-    scenario = fashion
-      ? 'In the latest 50 post-return comments, 18 customers mention inconsistent sizing, 12 say product colour or fabric differed from the online description, 9 mention poor refund updates, and 11 describe other issues. The return rate increased from 16% to 23%, but return-reason codes are incomplete and no conclusion has been validated.'
-      : `The latest 50 customer comments about ${industry.contexts[0]?.toLowerCase() ?? industry.focus} contain three recurring themes, while the negative-outcome rate has risen by 7 percentage points. Reason codes are incomplete and the team has not validated whether the loudest theme causes the largest impact.`
+    scenario = customerCase.voc
     task = `Turn this feedback into a usable voice-of-customer finding. Prioritize the themes, identify what you can and cannot conclude, state the customer or transaction data you would request, propose one immediate low-risk response and one hypothesis to test, and show how the insight should be shared back with the team that owns the experience. ${levelNote}`
     guidance = 'Use a compact table or bullets for theme, evidence, affected customer need, validation required, owner, and proposed response.'
     rubric = ['Theme prioritization', 'Evidence and limitations', 'Customer-need interpretation', 'Validation quality', 'Action and feedback loop']
   } else if (/service recovery/i.test(question.competency)) {
-    scenario = fashion
-      ? 'A customer paid ₹6,800 for an outfit that arrived damaged. A promised replacement was not dispatched, the return was collected, and the refund has now been pending for eight days. The customer has posted publicly and says this is their final attempt before filing a complaint. You can expedite an existing refund request but need manager approval for goodwill above ₹1,000.'
-      : `A customer affected by ${industry.contexts[1]?.toLowerCase() ?? industry.focus} received an unusable service, a promised correction did not happen, and the financial or service reversal is overdue by eight days. The customer has contacted the company publicly. You can expedite the existing resolution but need approval for an additional goodwill exception.`
+    scenario = customerCase.recovery
     task = `Handle the recovery as the employee receiving the case. Write what you would say to the customer, list the actions you would take in the first 30 minutes, identify the cross-functional owners and evidence required, state what you can authorize versus escalate, and define the update cadence and closure check. ${levelNote}`
     guidance = 'Put the customer-facing response first. Demonstrate ownership without blaming another team or promising an outcome you cannot control.'
     rubric = ['Empathy and ownership', 'Recovery judgement', 'Cross-functional coordination', 'Authority and escalation', 'Follow-through and closure']
   } else if (/cx metrics/i.test(question.competency)) {
-    scenario = fashion
-      ? 'The attached workbook contains customer contacts, resolved contacts, available capacity, service cost, escalations, and customer score by period, region, and channel for a Fashion/Apparel customer-service operation. Leadership wants to know where customers experience the greatest avoidable effort.'
-      : `The attached workbook contains customer contacts, resolutions, capacity, service cost, escalations, and customer score by period, region, and channel for ${industry.name}. Leadership wants to know where customers experience the greatest avoidable effort.`
+    scenario = `The attached workbook contains customer contacts, resolved contacts, available capacity, service cost, escalations, and customer score by period, region, and channel for ${customerCase.excelContext}. Leadership wants to know where customers experience the greatest avoidable effort.`
     task = `Use the workbook to calculate resolution rate, escalation rate, contacts per unit of capacity, and cost per resolved contact. Compare at least two channels or regions, identify the segment that needs attention first, and recommend one customer-experience action with an owner and a measure that would confirm improvement. ${levelNote}`
     guidance = 'Show formulas or pivot logic in the workbook and submit a concise recommendation that connects operational performance to customer impact.'
     rubric = ['Calculation accuracy', 'Segment comparison', 'Customer-impact interpretation', 'Prioritization', 'Measurable recommendation']
   } else {
-    scenario = fashion
-      ? 'An upset customer calls and says: “This is the third time I have explained this. My outfit arrived damaged, nobody can tell me where my refund is, and the event I bought it for has already passed. Why should I ever shop with you again?” The account confirms the return was collected, but the refund status has not updated.'
-      : `An upset customer says: “This is the third time I have explained this. The issue with ${industry.contexts[0]?.toLowerCase() ?? industry.focus} is still unresolved, nobody can tell me what happens next, and I no longer trust your company.” The account confirms the request exists, but its status has not updated.`
+    scenario = customerCase.empathy
     task = `Record the first 60–90 seconds of your response directly to the customer. Acknowledge the impact, reflect the issue in your own words, ask one useful clarification question, explain the action you can take now, set an honest update expectation, and check whether the proposed next step addresses the customer’s immediate concern. ${levelNote}`
     guidance = 'Speak as if the customer is on the call. We assess listening, empathy, clarity, ownership, and expectation-setting—not an internal briefing.'
     rubric = ['Listening and acknowledgement', 'Empathy', 'Clarifying question', 'Ownership and action', 'Expectation setting']

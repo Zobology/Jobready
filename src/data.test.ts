@@ -135,6 +135,32 @@ test('tests direct customer-handling skills for entry-level Customer Experience 
   assert.ok(roleQuestions.every((question) => !/discovery brief|analysis note|customer experience briefing/i.test(question.task ?? '')))
 })
 
+test('uses concrete customer journeys instead of industry taxonomy labels in Customer Experience', () => {
+  const role = roles.find((item) => item.name === 'Customer Experience')!
+  const scenariosFor = (industryName: string) => buildAssessment(role, industries.find((item) => item.name === industryName)!, profile)
+    .filter((question) => question.dimension === 'role')
+    .map((question) => question.scenario ?? '')
+
+  const edTech = scenariosFor('EdTech')
+  assert.match(edTech[0], /learner enrolled/i)
+  assert.match(edTech[0], /learning account is still inactive/i)
+  assert.match(edTech[1], /50 learner comments/i)
+  assert.match(edTech[2], /learner paid for a program/i)
+  assert.match(edTech[4], /upset learner/i)
+  assert.ok(edTech.every((scenario) => !/customer using acquisition|comments about acquisition|affected by learning journey/i.test(scenario)))
+
+  assert.match(scenariosFor('Banking')[0], /digital transaction/i)
+  assert.match(scenariosFor('Hospitals')[0], /patient/i)
+  assert.match(scenariosFor('Software / SaaS')[0], /activate a required feature/i)
+  assert.match(scenariosFor('Government / Public Sector')[0], /citizen or beneficiary/i)
+
+  for (const industry of industries) {
+    const scenarios = buildAssessment(role, industry, profile).filter((question) => question.dimension === 'role').map((question) => question.scenario ?? '')
+    assert.ok(scenarios.every((scenario) => scenario.length >= 100), `${industry.name} has an incomplete customer scenario`)
+    assert.ok(scenarios.every((scenario) => !/customer using |customer comments about |customer affected by /i.test(scenario)), `${industry.name} exposes an internal taxonomy label`)
+  }
+})
+
 test('requires direct role-play instead of internal briefings for interaction competencies', () => {
   const industry = industries.find((item) => item.name === 'Fashion / Apparel')!
   const questionFor = (roleName: string, competency: RegExp) => {
