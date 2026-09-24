@@ -92,7 +92,7 @@ app.get('/api/assessment-data/core-data-understanding', requireUser, dataDownloa
       level: z.string().trim().min(1).max(80),
       education: z.string().trim().min(1).max(160),
       experienceType: z.enum(['fresher', 'experienced']),
-      variant: z.enum(['commercial', 'operations', 'people', 'customer', 'technology', 'general']),
+      variant: z.enum(['commercial', 'operations', 'people', 'customer', 'technology', 'analytical', 'general']),
       exercise: z.enum(['core', 'role', 'industry']).default('core'),
     }).parse(request.query)
     const workbook = await buildSampleWorkbook({ ...query, variant: query.variant as DataVariant })

@@ -1,6 +1,6 @@
 import ExcelJS from 'exceljs'
 
-type DataVariant = 'commercial' | 'operations' | 'people' | 'customer' | 'technology' | 'general'
+type DataVariant = 'commercial' | 'operations' | 'people' | 'customer' | 'technology' | 'analytical' | 'general'
 
 interface DatasetContext {
   role: string
@@ -54,6 +54,11 @@ function columnsFor(variant: DataVariant) {
       { header: 'Tickets / Requirements', key: 'demand', width: 22 }, { header: 'Completed Items', key: 'completed', width: 17 },
       { header: 'Team Capacity', key: 'capacity', width: 15 }, { header: 'Delivery Cost (INR)', key: 'cost', width: 19 },
       { header: 'Defects / Incidents', key: 'exceptions', width: 18 }, { header: 'Adoption / Quality Score', key: 'score', width: 23 },
+    ],
+    analytical: [
+      { header: 'Actual Value', key: 'demand', width: 16 }, { header: 'Prior-period Value', key: 'completed', width: 19 },
+      { header: 'Plan / Benchmark', key: 'capacity', width: 18 }, { header: 'Financial Impact (INR)', key: 'cost', width: 21 },
+      { header: 'Exceptions / Adjustments', key: 'exceptions', width: 22 }, { header: 'Quality / Confidence Score', key: 'score', width: 24 },
     ],
     general: [
       { header: 'Demand / Requests', key: 'demand', width: 18 }, { header: 'Completed', key: 'completed', width: 13 },

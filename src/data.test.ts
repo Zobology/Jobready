@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
-import { buildAssessment, industries, roles, type Dimension, type QuestionFormat } from './data'
+import { assessmentDesignIssues, buildAssessment, industries, roles, type Dimension, type QuestionFormat } from './data'
 
 const profile = {
   education: 'Bachelor’s degree',
@@ -60,6 +60,21 @@ test('allocates each response format to the requested dimensions', () => {
   assert.deepEqual(dimensionsFor('situational'), ['role', 'role', 'industry'])
 })
 
+test('attaches a role task, industry situation, authority boundary, and work product to every question', () => {
+  const role = roles.find((item) => item.name === 'IT Support')!
+  const industry = industries.find((item) => item.name === 'E-commerce')!
+  const questions = buildAssessment(role, industry, profile)
+
+  for (const question of questions) {
+    assert.ok(question.tags.some((tag) => tag.startsWith('task-')), `${question.id} lacks a role-task design`)
+    assert.ok(question.tags.some((tag) => tag.startsWith('industry-situation-')), `${question.id} lacks an industry situation`)
+    assert.ok(question.tags.some((tag) => tag.startsWith('work-product-')), `${question.id} lacks a work product`)
+    assert.ok(question.tags.includes('authority-entry'), `${question.id} lacks the entry-level authority boundary`)
+  }
+  assert.deepEqual(assessmentDesignIssues(questions, role, industry, profile), [])
+  assert.ok(questions.some((question) => /order|delivery|return|refund|inventory|fulfilment/i.test(`${question.scenario} ${question.task}`)))
+})
+
 test('builds distinct role-and-industry-specific Core audio, Excel, and written evidence', () => {
   const role = roles.find((item) => item.name === 'Customer Experience')!
   const industry = industries.find((item) => item.name === 'Fashion / Apparel')!
@@ -85,6 +100,15 @@ test('builds distinct role-and-industry-specific Core audio, Excel, and written 
   assert.match(coreExcelTask('Talent Acquisition'), /applicant-to-hire rate/i)
   assert.match(coreExcelTask('Software Development'), /defects or incidents per completed item/i)
   assert.match(coreExcelTask('Supply Chain'), /capacity utilization, exception rate/i)
+  assert.match(coreExcelTask('Financial Analyst'), /variance to plan, period-over-period change/i)
+
+  const coreExcelVariant = (roleName: string) => {
+    const selectedRole = roles.find((item) => item.name === roleName)!
+    const excel = buildAssessment(selectedRole, industry, profile).find((question) => question.dimension === 'core' && question.format === 'excel')!
+    return new URL(excel.sampleData!.downloadUrl, 'https://example.test').searchParams.get('variant')
+  }
+  assert.equal(coreExcelVariant('IT Support'), 'technology')
+  assert.equal(coreExcelVariant('Financial Analyst'), 'analytical')
 })
 
 test('changes Core responsibility and difficulty materially by target level', () => {

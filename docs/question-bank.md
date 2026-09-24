@@ -16,6 +16,8 @@ An assembled assessment draws 3 core items, 5 role items, 2 industry items, and 
 
 ## Work-sample design rules
 
+- Every assembled question now has four structured design anchors: a real role-task archetype, an industry operating situation, a level-specific authority boundary, and an observable work product. These are stored as `task-*`, `industry-situation-*`, `authority-*`, and `work-product-*` tags for auditing and evaluation analysis.
+- Role-task libraries cover live cases, analysis, planning, control, communication, coordination, and decision work across each role family. Industry packs supply real workflows, evidence sources, operating events, and constraints; role-aware overlays prevent, for example, a Talent Acquisition question in Hospitals from becoming a patient-care task.
 - Response formats are matched to observable capabilities instead of being assigned only by question order. For example, a sales assessment uses audio for persuasion, Excel for conversion analysis, and written communication for customer follow-up.
 - The three Core questions are independently contextualized to the selected role and industry: a delivered spoken update, a foundational Excel analysis with role-relevant measures, and a finished evidence-led workplace email. They do not reuse the same generic prompt across job profiles.
 - Questions in one assessment must require different work outputs; changing only the competency label or wording is not a distinct question.
@@ -24,7 +26,7 @@ An assembled assessment draws 3 core items, 5 role items, 2 industry items, and 
 - Role questions combine a role-family operating situation with a competency-specific proof artifact. The generator covers analytical, commercial, customer, people, operations, technology, governance, communications, advisory, and coordination work rather than merely inserting a competency name into one common case.
 - Industry questions use operating-risk patterns for financial services, technology, consumer, healthcare, industrial, energy/infrastructure, logistics/travel, media, professional services, education, hospitality, and public/social-impact sectors.
 - Integrated simulations use the actual workflow of the target role family—such as triaging customer cases, resolving a release issue, prioritizing sales opportunities, rebuilding a project plan, or preparing a control decision.
-- An exhaustive regression check generates all 90 roles × 60 industries × 4 levels and rejects missing scenarios, repeated tailored work samples, incorrect format mixes, generic legacy wording, unsynchronized prompts, and missing seniority boundaries.
+- Runtime design validation and an exhaustive regression check generate all 90 roles × 60 industries × 4 levels and reject missing design anchors, authority mismatches, near-duplicate work samples, generic fallback context, missing observable outputs, incorrect format mixes, unsynchronized prompts, and missing seniority boundaries.
 
 ## Required tags
 

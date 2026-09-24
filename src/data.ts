@@ -1,4 +1,5 @@
 import { masterCoreCompetencies, masterIndustries, masterRoles } from './masterMatrix'
+import { composeQuestionDesign, designTags, validateQuestionDesign } from './questionDesign'
 import { getAssessmentBank, type AssessmentMode, type DiagnosticTag, type ProficiencyLevel, type QuestionBankItem } from './questionBank'
 import type { CandidateProfile } from './reviewTypes'
 
@@ -216,6 +217,7 @@ function roleContextFamily(roleName: string) {
   if (/Software|Technology|Product|Cloud|Cyber|QA|Engineering|IT\b|IT Service/i.test(roleName)) return 'technology'
   if (/Customer|Client|Service|Success|Relationship|Support|Contact Center/i.test(roleName)) return 'service'
   if (/Sales|Marketing|Brand|Growth|Account Management|Business Development/i.test(roleName)) return 'commercial'
+  if (/Operations Analyst/i.test(roleName)) return 'operations'
   if (/Data|Analyst|Finance|Accounting|Audit|Tax|Investment|Credit|Research/i.test(roleName)) return 'analytical'
   if (/Operations|Supply|Logistics|Procurement|Inventory|Warehouse|Manufacturing|Quality|Project|Process/i.test(roleName)) return 'operations'
   return 'general'
@@ -578,9 +580,10 @@ function toQuestion(item: QuestionBankItem, occurrence: number): Question {
 function dataVariant(roleName: string) {
   if (/HR|Talent|People|Recruit|Employee/i.test(roleName)) return 'people'
   if (/Operations|Supply|Logistics|Procurement|Inventory|Warehouse|Manufacturing|Quality/i.test(roleName)) return 'operations'
-  if (/Software|Technology|Product|Cloud|Cyber|QA|Engineering/i.test(roleName)) return 'technology'
+  if (/Software|Technology|Product|Cloud|Cyber|QA|Engineering|IT\b/i.test(roleName)) return 'technology'
   if (/Customer|Client|Service|Success|Relationship|Support/i.test(roleName)) return 'customer'
-  if (/Data|Analyst|Finance|Accounting|Audit|Tax|Investment|Credit|Marketing|Sales/i.test(roleName)) return 'commercial'
+  if (/Marketing|Sales|Business Development|Account Management/i.test(roleName)) return 'commercial'
+  if (/Data|Analyst|Finance|Accounting|Audit|Tax|Investment|Credit|Research/i.test(roleName)) return 'analytical'
   return 'general'
 }
 
@@ -649,6 +652,7 @@ function coreExcelMeasures(role: RoleFamily) {
   if (variant === 'people') return 'applicant-to-hire rate, exits as a share of headcount, cost per hire, and engagement by segment'
   if (variant === 'customer') return 'resolution rate, escalation rate, contacts per unit of capacity, and cost per resolved contact'
   if (variant === 'technology') return 'completion rate, defects or incidents per completed item, capacity utilization, and cost per completed item'
+  if (variant === 'analytical') return 'variance to plan, period-over-period change, exception or adjustment rate, and financial impact by segment'
   return 'completion rate, exception rate, capacity utilization, and cost per completed outcome'
 }
 
@@ -702,7 +706,7 @@ function contextualCoreWorkSample(question: Question, format: QuestionFormat, ro
     }
   }
   if (format === 'excel') {
-    const base = `The attached workbook contains ${industry.name} performance data by period, region, and operating channel for a ${role.name} team.`
+    const base = `The attached workbook contains ${industry.name} performance data by period, region, and operating channel for ${/^[aeiou]/i.test(role.name) ? 'an' : 'a'} ${role.name} team.`
     const measures = coreExcelMeasures(role)
     const levelContent = band === 'entry' ? {
       scenario: `${base} Your supervisor has specified the calculations and wants an accurate summary before deciding whether further investigation is needed.`,
@@ -1000,11 +1004,13 @@ function realisticRoleWorkSample(question: Question, format: QuestionFormat, rol
   if (question.dimension !== 'role') return question
   if (role.name === 'Customer Experience') return customerExperienceWorkSample(question, role, industry, profile)
   if (role.name === 'B2C Sales') return b2cSalesWorkSample(question, format, role, industry, profile)
-  const work = competencyWorkDefinition(question.competency)
+  const design = composeQuestionDesign(role, industry, profile.level, question.competency, format, question.bankId)
   const proof = competencyProof(question.competency, role.name)
   const levelNote = levelComplexity[targetBand(profile.level)]
   const directInteraction = format !== 'excel' && isDirectInteractionCompetency(question.competency)
-  const scenario = directInteraction ? directInteractionScenario(role, industry, question.competency) : question.scenario
+  const scenario = directInteraction
+    ? directInteractionScenario(role, industry, question.competency)
+    : `In ${industry.name}, ${design.industrySituation.event}. The work involves ${design.industrySituation.workflow}. As the ${role.name} professional, you must ${design.roleTask.activity}; the immediate audience is ${design.roleTask.audience}. Available evidence includes ${design.industrySituation.evidenceSource}, and ${design.industrySituation.operatingConstraint}.`
   let task: string
   let guidance: string
 
@@ -1013,16 +1019,16 @@ function realisticRoleWorkSample(question: Question, format: QuestionFormat, rol
       task = `Record the first 60–90 seconds as if you are speaking directly to ${interactionAudience(role, question.competency)}. Do not describe what you would say: deliver the interaction. ${directInteractionRequirement(role, question.competency)} ${levelNote}`
       guidance = `Stay in role throughout the recording. We assess the actual ${question.competency.toLowerCase()} performance, listening or audience response, judgement, and next-step clarity.`
     } else {
-      task = `Record a 60–90 second ${role.name} briefing that delivers ${work.output}. Lead with the decision or issue, use the most relevant scenario evidence, summarize how you would ${proof.requirement}, address uncertainty, and close with the action or commitment you need. ${levelNote}`
+      task = `Record a 60–90 second update to ${design.roleTask.audience}. Deliver the update itself: explain the decision or issue, use the relevant evidence, state what is uncertain, and request the next action or commitment. Close with the evidence you would use to verify this outcome: ${design.roleTask.successEvidence}. ${levelNote}`
       guidance = 'Speak to the stakeholder who must act next. We assess job judgement, message structure, evidence use, audience awareness, and a clear close.'
     }
   } else if (format === 'excel') {
-    task = `Use the attached workbook to produce ${work.output}. Validate the data, calculate at least three role-relevant measures, compare two meaningful segments, identify the main driver or exception, and ${proof.requirement}. Recommend one action with an owner and success measure. ${levelNote}`
+    task = `Use the attached workbook to produce ${design.roleTask.record}. Validate the data, calculate at least three role-relevant measures, compare two meaningful segments, identify the main driver or exception, and ${proof.requirement}. State the supported next action and the measure you would use to verify this outcome: ${design.roleTask.successEvidence}. ${levelNote}`
     guidance = `Submit an auditable workbook and a concise ${role.name} recommendation. Show formulas or pivot logic and distinguish calculated evidence from assumptions.`
   } else if (format === 'written_communication') {
     const communicationTask = writtenIndex === 0 || /communicat|client|customer|employee|stakeholder|media|investor/i.test(question.competency)
-      ? `Draft the email or stakeholder message that communicates ${work.output}. Use the scenario facts, state what is known and unresolved, ${proof.requirement}, tailor the tone, and make the requested action, owner, and timing explicit.`
-      : `Write a concise decision memo that turns the scenario evidence into ${work.output}. Structure it as situation, evidence, insight, implication, recommendation, and next action; ${proof.requirement}.`
+      ? `Draft the finished email or stakeholder message to ${design.roleTask.audience}. Use the scenario evidence, state what is known and unresolved, ${proof.requirement}, and make the requested action and timing explicit. The communication should create ${design.roleTask.record}.`
+      : `Write the concise decision note needed to ${design.roleTask.activity}. Structure it as situation, evidence, implication, recommendation, and next action; ${proof.requirement}. Show how the action will be checked against this outcome: ${design.roleTask.successEvidence}.`
     task = `${communicationTask} ${levelNote}`
     guidance = 'Write 120–200 words as the finished workplace communication, not a description of how you would write it.'
   } else {
@@ -1030,39 +1036,23 @@ function realisticRoleWorkSample(question: Question, format: QuestionFormat, rol
       task = `Handle the interaction as the ${role.name} professional receiving it. Start with the exact words or action you would use with ${interactionAudience(role, question.competency)}, then ${proof.requirement}. Add the system record or handoff you would create, the decision or commitment you seek, and the condition that would make you escalate or change course. ${levelNote}`
       guidance = `Give the actual response and job artifact, not a description of your approach. We assess ${question.competency.toLowerCase()}, judgement, ownership, and follow-through.`
     } else {
-      task = `Produce ${work.output} for this situation. ${work.actions[0].toUpperCase()}${work.actions.slice(1)}; ${proof.requirement}. Include the first action you would take, the artifact or system record you would create, and the condition that would make you escalate or change course. ${levelNote}`
+      task = `Complete this ${role.name} activity: ${design.roleTask.activity}. Produce ${design.roleTask.record}; ${proof.requirement}. State the first action, the evidence you would record, the condition for escalation or a change of course, and how you would verify this outcome: ${design.roleTask.successEvidence}. ${levelNote}`
       guidance = `Answer as a ${role.name} work sample. We assess the usability of the output, role-specific judgement, prioritization, and measurable follow-through.`
     }
   }
   return { ...question, scenario, task, prompt: `${scenario} ${task}`, guidance }
 }
 
-function industryRiskScenario(industry: Industry, competency: string) {
-  const areas = industry.contexts.slice(0, 3).join(', ')
-  if (/Banking|NBFC|Insurance|FinTech|Investment|Capital Markets|Payments/i.test(industry.name)) return `A growth action affecting ${areas} is ready to launch, but a sample of customer records contains missing eligibility, consent, or control evidence. The commercial target is due this week and the control owner has not approved an exception.`
-  if (/Hospital|Pharma|Medical|Health|Diagnostic/i.test(industry.name)) return `Demand in ${areas} is above plan, but a proposed shortcut could affect patient safety, privacy, quality, or an approved procedure. A frontline stakeholder wants an answer before the next service cycle begins.`
-  if (/Software|IT Services|AI \/ Data|Cybersecurity|Hardware|Cloud/i.test(industry.name)) return `A recent release affecting ${areas} improved adoption, but incidents and support contacts increased in one user segment. The team must decide whether to continue, limit, or reverse the change before the next release window.`
-  if (/E-commerce|Retail|FMCG|Consumer|Fashion|Beauty|Food/i.test(industry.name)) return `A promotion affecting ${areas} increased demand, but returns, complaints, or fulfilment exceptions are concentrated in one channel. The team must decide whether to scale, change, or stop the activity before the next campaign cycle.`
-  if (/Manufacturing|Automotive|Chemicals|Engineering|Construction/i.test(industry.name)) return `Output involving ${areas} is behind plan, and a proposed recovery step would reduce delay but bypass a quality, safety, or supplier control. The next production or site decision is due within five working days.`
-  if (/Infrastructure|Energy|Oil|Renewable/i.test(industry.name)) return `A milestone involving ${areas} is at risk, and the fastest recovery option changes cost, reliability, environmental, or regulatory exposure. Leadership needs a documented recommendation before approving the revised plan.`
-  if (/Logistics|Courier|Aviation|Rail|Shipping|Travel/i.test(industry.name)) return `Volume across ${areas} has shifted unexpectedly, creating service failures in one route or customer segment. An expedited recovery option improves the immediate SLA but increases cost or compliance risk.`
-  if (/Telecom|Media|Entertainment|Advertising|Gaming/i.test(industry.name)) return `An activity involving ${areas} is generating strong reach or usage, but complaints and opt-outs have increased and one claim or content decision is under review. The next publication or campaign decision is due this week.`
-  if (/Consulting|Accounting|Legal|Recruitment|BPO/i.test(industry.name)) return `A client deliverable involving ${areas} is due shortly, but the available evidence contains a material limitation that the client would prefer to omit. Delivery, accuracy, and professional obligations now conflict.`
-  if (/Higher Education|K-12|EdTech|Vocational/i.test(industry.name)) return `A learner-facing claim affecting ${areas} promises a guaranteed outcome, while the approved evidence supports assistance or an expected range rather than a guarantee. A prospective learner has requested written confirmation before paying.`
-  if (/Hotel|Restaurant|Hospitality|Sports/i.test(industry.name)) return `Demand involving ${areas} is above capacity for a peak period, and the proposed response could protect revenue but worsen service recovery, fairness, or customer trust.`
-  if (/Government|NGO/i.test(industry.name)) return `A program affecting ${areas} is under pressure to show rapid results, but the proposed prioritization may exclude a high-need group or weaken procurement, evidence, or public-accountability requirements.`
-  return `A proposed action involving ${areas || industry.focus} improves the headline result but creates an unresolved customer, operational, or governance risk related to ${competency.toLowerCase()}.`
-}
-
 function contextualIndustryWorkSample(question: Question, format: QuestionFormat, role: RoleFamily, industry: Industry, profile: AssessmentProfile) {
   const levelNote = levelComplexity[targetBand(profile.level)]
+  const design = composeQuestionDesign(role, industry, profile.level, question.competency, format, question.bankId)
   if (format === 'excel') {
-    const scenario = `The attached ${industry.name} workbook shows performance by period, region, and operating channel for ${industry.contexts.slice(0, 3).join(', ')}. Volume has changed, but cost, completion, exceptions, and outcome quality do not move in the same direction, so the headline total is not enough for a decision.`
-    const task = `Analyze the workbook and recommend one ${industry.name} action. Calculate at least three relevant measures, compare two segments, identify the most decision-relevant exception, and explain how ${question.competency.toLowerCase()} changes your conclusion. ${levelNote}`
+    const scenario = `The attached ${industry.name} workbook covers ${design.industrySituation.workflow}. It shows that ${design.industrySituation.event}. The available sources are ${design.industrySituation.evidenceSource}. ${design.industrySituation.operatingConstraint[0].toUpperCase()}${design.industrySituation.operatingConstraint.slice(1)}.`
+    const task = `Analyze the workbook and produce ${design.workProduct.name}. Calculate at least three relevant measures, compare two operating segments, identify the most decision-relevant exception, and explain how ${question.competency.toLowerCase()} affects the conclusion. Recommend the next action and the evidence that would confirm success. ${levelNote}`
     return { ...question, scenario, task, prompt: `${scenario} ${task}`, guidance: `Submit an auditable workbook and a short recommendation that connects ${industry.name} operating context to a measurable customer, service, risk, or business outcome.` }
   }
-  const scenario = industryRiskScenario(industry, question.competency)
-  const task = `Make the immediate decision for this situation: state what may continue, pause, or change; identify the evidence or requirement you would verify; draft the message to the affected stakeholder; record the issue and owner; and define the condition for closure. Relate the decision to ${question.competency.toLowerCase()}. ${levelNote}`
+  const scenario = `In ${industry.name}, work involving ${design.industrySituation.workflow} needs an immediate decision because ${design.industrySituation.event}. Available evidence includes ${design.industrySituation.evidenceSource}; ${design.industrySituation.operatingConstraint}.`
+  const task = `Produce ${design.workProduct.name}. State what may continue, pause, or change; identify the evidence or requirement you would verify; draft the message to the affected stakeholder; create the issue or decision record; and define the condition for closure. Explain the relevance of ${question.competency.toLowerCase()} to the decision. ${levelNote}`
   return { ...question, scenario, task, prompt: `${scenario} ${task}`, guidance: `Balance the operating objective with the customer, quality, regulatory, safety, or trust considerations that matter in ${industry.name}.` }
 }
 
@@ -1201,7 +1191,7 @@ function applyQuestionFormat(question: Question, format: QuestionFormat, role: R
 function configureQuestionFormats(questions: Question[], role: RoleFamily, industry: Industry, profile: AssessmentProfile) {
   let writtenIndex = 0
   const roleFormats = assignRoleFormats(questions.filter((question) => question.dimension === 'role'))
-  return questions.map((question) => {
+  const configuredQuestions = questions.map((question) => {
     if (question.dimension === 'simulation') {
       const configured = { ...question, format: 'simulation' as const, tags: [...new Set([...question.tags, 'format-simulation'])] }
       return realisticSimulation(configured, role, industry, profile)
@@ -1215,9 +1205,17 @@ function configureQuestionFormats(questions: Question[], role: RoleFamily, indus
     if (format === 'written_communication') writtenIndex += 1
     return configured
   })
+  return configuredQuestions.map((question) => {
+    const design = composeQuestionDesign(role, industry, profile.level, question.competency, question.format, question.bankId)
+    return { ...question, tags: [...new Set([...question.tags, ...designTags(design, profile.level)])] }
+  })
 }
 
-export function buildAssessment(role: RoleFamily, industry: Industry, profile: AssessmentProfile, options: { previousCoreBankIds?: string[] } = {}): Question[] {
+export function assessmentDesignIssues(questions: Question[], role: RoleFamily, industry: Industry, profile: AssessmentProfile) {
+  return validateQuestionDesign(questions, role, industry, profile.level)
+}
+
+export function buildAssessment(role: RoleFamily, industry: Industry, profile: AssessmentProfile, options: { previousCoreBankIds?: string[]; validateDesign?: boolean } = {}): Question[] {
   const bank = getAssessmentBank(role.code, industry.code)
   const core = selectMixed(bank.core, 3, applicationTarget('core', 3, profile), profile, new Set(options.previousCoreBankIds ?? []))
   const roleItems = selectMixed(bank.role, 5, applicationTarget('role', 5, profile), profile)
@@ -1227,7 +1225,12 @@ export function buildAssessment(role: RoleFamily, industry: Industry, profile: A
     .map((item) => contextualizeItem(item, role, industry, profile))
     .map((item) => adaptItem(item, profile))
     .map(toQuestion)
-  return configureQuestionFormats(questions, role, industry, profile)
+  const configured = configureQuestionFormats(questions, role, industry, profile)
+  if (options.validateDesign !== false) {
+    const issues = assessmentDesignIssues(configured, role, industry, profile)
+    if (issues.length) throw new Error(`Question design validation failed: ${issues.map((issue) => issue.message).join(' ')}`)
+  }
+  return configured
 }
 
 export const educationOptions = [
