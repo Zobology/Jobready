@@ -85,6 +85,50 @@ test('builds distinct and realistic entry-level B2C Sales work samples for EdTec
   assert.ok([...roleQuestions, ...industryQuestions, simulation].every((question) => /entry-level employee’s authority/i.test(question.task ?? '')))
 })
 
+test('tests direct customer-handling skills for entry-level Customer Experience in Fashion/Apparel', () => {
+  const role = roles.find((item) => item.name === 'Customer Experience')!
+  const industry = industries.find((item) => item.name === 'Fashion / Apparel')!
+  const roleQuestions = buildAssessment(role, industry, profile).filter((question) => question.dimension === 'role')
+  const byCompetency = Object.fromEntries(roleQuestions.map((question) => [question.competency, question]))
+
+  assert.deepEqual(Object.fromEntries(roleQuestions.map((question) => [question.competency, question.format])), {
+    'Customer journey': 'written_communication',
+    VOC: 'situational',
+    'Service recovery': 'situational',
+    'CX metrics': 'excel',
+    empathy: 'audio',
+  })
+  assert.match(byCompetency['Customer journey'].task!, /reply you would send to the customer/i)
+  assert.match(byCompetency.VOC.scenario!, /50 post-return comments/i)
+  assert.match(byCompetency.VOC.task!, /voice-of-customer finding/i)
+  assert.match(byCompetency['Service recovery'].scenario!, /refund has now been pending for eight days/i)
+  assert.match(byCompetency['Service recovery'].task!, /what you would say to the customer/i)
+  assert.match(byCompetency['CX metrics'].task!, /resolution rate, escalation rate/i)
+  assert.match(byCompetency.empathy.task!, /response directly to the customer/i)
+  assert.match(byCompetency.empathy.guidance, /not an internal briefing/i)
+  assert.deepEqual(byCompetency.empathy.rubric, ['Listening and acknowledgement', 'Empathy', 'Clarifying question', 'Ownership and action', 'Expectation setting'])
+  assert.ok(roleQuestions.every((question) => !/discovery brief|analysis note|customer experience briefing/i.test(question.task ?? '')))
+})
+
+test('requires direct role-play instead of internal briefings for interaction competencies', () => {
+  const industry = industries.find((item) => item.name === 'Fashion / Apparel')!
+  const questionFor = (roleName: string, competency: RegExp) => {
+    const role = roles.find((item) => item.name === roleName)!
+    return buildAssessment(role, industry, profile).find((question) => question.dimension === 'role' && competency.test(question.competency))!
+  }
+  const salesPitch = questionFor('Inside Sales', /pitching/i)
+  const candidateInterview = questionFor('Talent Acquisition', /interviewing/i)
+  const customerCommunication = questionFor('Customer Service', /^communication$/i)
+
+  assert.equal(salesPitch.format, 'audio')
+  assert.match(salesPitch.task!, /speaking directly to the prospect or customer/i)
+  assert.match(salesPitch.task!, /do not describe what you would say/i)
+  assert.equal(candidateInterview.format, 'audio')
+  assert.match(candidateInterview.task!, /speaking directly to the candidate/i)
+  assert.equal(customerCommunication.format, 'audio')
+  assert.match(customerCommunication.task!, /speaking directly to the customer or client/i)
+})
+
 test('generates usable, distinct work samples for every role, industry, and level', () => {
   const levels = ['Entry level', 'Associate', 'Mid-level', 'Senior']
   const expectedLevelLanguage = [/entry-level employee’s authority/i, /own the task independently/i, /competing cross-functional priorities/i, /senior leadership/i]

@@ -685,18 +685,127 @@ function b2cSalesWorkSample(question: Question, format: QuestionFormat, role: Ro
   return { ...question, scenario, task, prompt: `${scenario} ${task}`, guidance }
 }
 
+function customerExperienceWorkSample(question: Question, role: RoleFamily, industry: Industry, profile: AssessmentProfile) {
+  if (role.name !== 'Customer Experience' || question.dimension !== 'role') return question
+  const fashion = /fashion|apparel/i.test(industry.name)
+  const levelNote = levelComplexity[targetBand(profile.level)]
+  let scenario: string
+  let task: string
+  let guidance: string
+  let rubric: string[]
+
+  if (/customer journey/i.test(question.competency)) {
+    scenario = fashion
+      ? 'A customer ordered two outfits in the mobile app for a family event. The parcel arrived three days late, one item’s size label does not match the order, and a store refused the exchange because it was purchased online. The customer has already repeated the details in chat and by phone, and the event is four days away.'
+      : `A customer using ${industry.contexts[0]?.toLowerCase() ?? industry.focus} received conflicting guidance in two channels, repeated the same information twice, and still has no confirmed resolution. The customer has a time-sensitive need in four days.`
+    task = `Write the reply you would send to the customer now, then add a short internal handoff note. The reply must acknowledge the experience, confirm what you understand, avoid an unsupported promise, and give a specific next update time. The handoff must identify the broken journey step, the team that should act next, the information they need, and how you will close the loop with the customer. ${levelNote}`
+    guidance = 'Write the finished customer message first and the internal handoff second, using no more than 200 words in total.'
+    rubric = ['Customer acknowledgement', 'Accurate issue summary', 'Ownership and expectation setting', 'Cross-functional handoff', 'Closed-loop follow-up']
+  } else if (/^voc$/i.test(question.competency)) {
+    scenario = fashion
+      ? 'In the latest 50 post-return comments, 18 customers mention inconsistent sizing, 12 say product colour or fabric differed from the online description, 9 mention poor refund updates, and 11 describe other issues. The return rate increased from 16% to 23%, but return-reason codes are incomplete and no conclusion has been validated.'
+      : `The latest 50 customer comments about ${industry.contexts[0]?.toLowerCase() ?? industry.focus} contain three recurring themes, while the negative-outcome rate has risen by 7 percentage points. Reason codes are incomplete and the team has not validated whether the loudest theme causes the largest impact.`
+    task = `Turn this feedback into a usable voice-of-customer finding. Prioritize the themes, identify what you can and cannot conclude, state the customer or transaction data you would request, propose one immediate low-risk response and one hypothesis to test, and show how the insight should be shared back with the team that owns the experience. ${levelNote}`
+    guidance = 'Use a compact table or bullets for theme, evidence, affected customer need, validation required, owner, and proposed response.'
+    rubric = ['Theme prioritization', 'Evidence and limitations', 'Customer-need interpretation', 'Validation quality', 'Action and feedback loop']
+  } else if (/service recovery/i.test(question.competency)) {
+    scenario = fashion
+      ? 'A customer paid ₹6,800 for an outfit that arrived damaged. A promised replacement was not dispatched, the return was collected, and the refund has now been pending for eight days. The customer has posted publicly and says this is their final attempt before filing a complaint. You can expedite an existing refund request but need manager approval for goodwill above ₹1,000.'
+      : `A customer affected by ${industry.contexts[1]?.toLowerCase() ?? industry.focus} received an unusable service, a promised correction did not happen, and the financial or service reversal is overdue by eight days. The customer has contacted the company publicly. You can expedite the existing resolution but need approval for an additional goodwill exception.`
+    task = `Handle the recovery as the employee receiving the case. Write what you would say to the customer, list the actions you would take in the first 30 minutes, identify the cross-functional owners and evidence required, state what you can authorize versus escalate, and define the update cadence and closure check. ${levelNote}`
+    guidance = 'Put the customer-facing response first. Demonstrate ownership without blaming another team or promising an outcome you cannot control.'
+    rubric = ['Empathy and ownership', 'Recovery judgement', 'Cross-functional coordination', 'Authority and escalation', 'Follow-through and closure']
+  } else if (/cx metrics/i.test(question.competency)) {
+    scenario = fashion
+      ? 'The attached workbook contains customer contacts, resolved contacts, available capacity, service cost, escalations, and customer score by period, region, and channel for a Fashion/Apparel customer-service operation. Leadership wants to know where customers experience the greatest avoidable effort.'
+      : `The attached workbook contains customer contacts, resolutions, capacity, service cost, escalations, and customer score by period, region, and channel for ${industry.name}. Leadership wants to know where customers experience the greatest avoidable effort.`
+    task = `Use the workbook to calculate resolution rate, escalation rate, contacts per unit of capacity, and cost per resolved contact. Compare at least two channels or regions, identify the segment that needs attention first, and recommend one customer-experience action with an owner and a measure that would confirm improvement. ${levelNote}`
+    guidance = 'Show formulas or pivot logic in the workbook and submit a concise recommendation that connects operational performance to customer impact.'
+    rubric = ['Calculation accuracy', 'Segment comparison', 'Customer-impact interpretation', 'Prioritization', 'Measurable recommendation']
+  } else {
+    scenario = fashion
+      ? 'An upset customer calls and says: “This is the third time I have explained this. My outfit arrived damaged, nobody can tell me where my refund is, and the event I bought it for has already passed. Why should I ever shop with you again?” The account confirms the return was collected, but the refund status has not updated.'
+      : `An upset customer says: “This is the third time I have explained this. The issue with ${industry.contexts[0]?.toLowerCase() ?? industry.focus} is still unresolved, nobody can tell me what happens next, and I no longer trust your company.” The account confirms the request exists, but its status has not updated.`
+    task = `Record the first 60–90 seconds of your response directly to the customer. Acknowledge the impact, reflect the issue in your own words, ask one useful clarification question, explain the action you can take now, set an honest update expectation, and check whether the proposed next step addresses the customer’s immediate concern. ${levelNote}`
+    guidance = 'Speak as if the customer is on the call. We assess listening, empathy, clarity, ownership, and expectation-setting—not an internal briefing.'
+    rubric = ['Listening and acknowledgement', 'Empathy', 'Clarifying question', 'Ownership and action', 'Expectation setting']
+  }
+
+  return { ...question, scenario, task, prompt: `${scenario} ${task}`, guidance, rubric }
+}
+
+function isDirectInteractionCompetency(competency: string) {
+  return /pitch|persuasion|objection|negotiat|interview|communication|empathy|service recovery|issue resolution|relationship|facilitat|outreach|discovery|expectation|client|stakeholder|contact handling/i.test(competency)
+}
+
+function interactionAudience(role: RoleFamily, competency: string) {
+  if (/Talent Acquisition|Recruit/i.test(role.name) && /interview|communication/i.test(competency)) return 'the candidate'
+  if (/Sales|Business Development|Pre-sales/i.test(role.name)) return 'the prospect or customer'
+  if (/Customer|Client|Relationship|Contact Center|Service/i.test(role.name)) return 'the customer or client'
+  if (/Public Relations|Communications|Investor Relations/i.test(role.name)) return 'the external stakeholder'
+  return 'the stakeholder who must respond or act'
+}
+
+function industryInteractionContext(industry: Industry) {
+  if (/fashion|apparel/i.test(industry.name)) return { customerIssue: 'an online order, size exchange, or return', businessNeed: 'reducing seasonal stock and markdown risk without harming customer experience', candidateArea: 'e-commerce and store operations' }
+  if (/Banking|NBFC|Insurance|FinTech|Payments/i.test(industry.name)) return { customerIssue: 'a payment, account, policy, or claim request', businessNeed: 'improving customer conversion and service while meeting eligibility and control requirements', candidateArea: 'customer operations and regulated service' }
+  if (/Software|IT Services|AI \/ Data|Cloud|Cybersecurity/i.test(industry.name)) return { customerIssue: 'subscription access, onboarding, or a product incident', businessNeed: 'improving adoption and reliability while controlling implementation effort', candidateArea: 'product and customer operations' }
+  if (/Hospital|Pharma|Medical|Health|Diagnostic/i.test(industry.name)) return { customerIssue: 'an appointment, report, service, or billing concern', businessNeed: 'improving access and turnaround without compromising quality, privacy, or safety', candidateArea: 'patient and service operations' }
+  if (/E-commerce|Retail|FMCG|Consumer|Beauty|Food/i.test(industry.name)) return { customerIssue: 'an order, delivery, product, or return', businessNeed: 'improving conversion and repeat purchase while reducing returns and fulfilment failures', candidateArea: 'consumer and channel operations' }
+  if (/Logistics|Courier|Aviation|Rail|Shipping|Travel/i.test(industry.name)) return { customerIssue: 'a booking, shipment, delay, or cancellation', businessNeed: 'improving service reliability and capacity without creating avoidable cost', candidateArea: 'service and network operations' }
+  if (/Higher Education|K-12|EdTech|Vocational/i.test(industry.name)) return { customerIssue: 'admission, learning-platform access, assessment, or learner support', businessNeed: 'improving learner acquisition and outcomes without overstating promises', candidateArea: 'learner and academic operations' }
+  if (/Hotel|Restaurant|Hospitality|Sports/i.test(industry.name)) return { customerIssue: 'a reservation, service failure, membership, or refund', businessNeed: 'improving utilization and revenue while protecting service quality', candidateArea: 'guest and service operations' }
+  return { customerIssue: `a request involving ${industry.contexts[0]?.toLowerCase() ?? industry.focus}`, businessNeed: `improving ${industry.contexts[0]?.toLowerCase() ?? industry.focus} performance`, candidateArea: industry.contexts[0]?.toLowerCase() ?? industry.focus }
+}
+
+function directInteractionScenario(role: RoleFamily, industry: Industry, competency: string) {
+  const context = industryInteractionContext(industry)
+  if (/Talent Acquisition|Recruit/i.test(role.name) && /interview/i.test(competency)) {
+    return `You are interviewing a candidate for an entry-level role supporting ${context.candidateArea} in ${industry.name}. Their resume says they “improved team performance,” but gives no scale, baseline, or personal contribution. In their first answer they describe what the team did without explaining their own decisions. The hiring rubric requires evidence of ownership, problem solving, and clear communication.`
+  }
+  if (/Sales|Business Development|Pre-sales/i.test(role.name)) {
+    return `A prospect in ${industry.name} is interested in ${context.businessNeed}, but says the proposed option appears more expensive than their current approach and they are unsure it fits their immediate priority. You have not confirmed the decision criteria, budget authority, implementation timing, or cost of leaving the problem unresolved.`
+  }
+  if (/Customer|Contact Center|Service/i.test(role.name)) {
+    return `A customer contacts you for the third time about ${context.customerIssue}. Two earlier agents gave different timelines, the promised update was missed, and the case record shows that a cross-functional handoff is still pending. You can confirm the current status and coordinate the next action, but you cannot promise the final outcome yet.`
+  }
+  if (/Client|Relationship|Account Management/i.test(role.name)) {
+    return `A client responsible for ${context.candidateArea} says the expected value has not been demonstrated and an unresolved delivery issue is affecting confidence in the relationship. Renewal or expansion will be discussed next week, but the client first wants a clear explanation, accountable recovery action, and evidence that the issue will not repeat.`
+  }
+  if (/Public Relations|Communications|Investor Relations/i.test(role.name)) {
+    return `An external stakeholder asks for an immediate explanation of a disputed ${industry.name} claim affecting ${context.candidateArea}. One fact is confirmed, one is still being validated, and an earlier internal message used wording that could overstate certainty. You must respond without speculating or creating a new commitment.`
+  }
+  return `A cross-functional stakeholder responsible for ${context.candidateArea} challenges your recommendation because its impact on their team is unclear. They agree the underlying issue matters but want evidence, a practical next step, and clarity about what decision or commitment you need from them today.`
+}
+
+function directInteractionRequirement(role: RoleFamily, competency: string) {
+  if (/Talent Acquisition|Recruit/i.test(role.name) && /interview/i.test(competency)) return 'Open the interview, ask one relevant behavioral question, use two evidence-seeking probes, and explain the next step to the candidate.'
+  if (/pitch|persuasion|solution selling/i.test(competency)) return 'Open the conversation, ask focused discovery questions, connect one relevant benefit to the confirmed need, support it responsibly, address the stated concern, and seek an appropriate next commitment.'
+  if (/objection|negotiat/i.test(competency)) return 'Acknowledge and clarify the concern, test what is driving it, respond with relevant evidence or options, protect your authority boundary, and agree the next decision step.'
+  if (/empathy|service recovery|issue resolution|contact handling|communication/i.test(competency) && /Customer|Client|Service|Contact Center|Relationship/i.test(role.name)) return 'Acknowledge the impact, summarize the issue to show understanding, ask one useful clarification, state what you can do now, set an honest update expectation, and check that the next step addresses the immediate concern.'
+  return `Demonstrate ${competency.toLowerCase()} by acknowledging the other person’s position, using the relevant facts, asking or answering the critical question, proposing a workable next step, and confirming the decision or commitment.`
+}
+
 function realisticRoleWorkSample(question: Question, format: QuestionFormat, role: RoleFamily, industry: Industry, profile: AssessmentProfile, writtenIndex = 0) {
   if (question.dimension !== 'role') return question
+  if (role.name === 'Customer Experience') return customerExperienceWorkSample(question, role, industry, profile)
   if (role.name === 'B2C Sales') return b2cSalesWorkSample(question, format, role, industry, profile)
   const work = competencyWorkDefinition(question.competency)
   const proof = competencyProof(question.competency, role.name)
   const levelNote = levelComplexity[targetBand(profile.level)]
+  const directInteraction = format !== 'excel' && isDirectInteractionCompetency(question.competency)
+  const scenario = directInteraction ? directInteractionScenario(role, industry, question.competency) : question.scenario
   let task: string
   let guidance: string
 
   if (format === 'audio') {
-    task = `Record a 60–90 second ${role.name} briefing that delivers ${work.output}. Lead with the decision or issue, use the most relevant scenario evidence, summarize how you would ${proof.requirement}, address uncertainty, and close with the action or commitment you need. ${levelNote}`
-    guidance = 'Speak to the stakeholder who must act next. We assess job judgement, message structure, evidence use, audience awareness, and a clear close.'
+    if (directInteraction) {
+      task = `Record the first 60–90 seconds as if you are speaking directly to ${interactionAudience(role, question.competency)}. Do not describe what you would say: deliver the interaction. ${directInteractionRequirement(role, question.competency)} ${levelNote}`
+      guidance = `Stay in role throughout the recording. We assess the actual ${question.competency.toLowerCase()} performance, listening or audience response, judgement, and next-step clarity.`
+    } else {
+      task = `Record a 60–90 second ${role.name} briefing that delivers ${work.output}. Lead with the decision or issue, use the most relevant scenario evidence, summarize how you would ${proof.requirement}, address uncertainty, and close with the action or commitment you need. ${levelNote}`
+      guidance = 'Speak to the stakeholder who must act next. We assess job judgement, message structure, evidence use, audience awareness, and a clear close.'
+    }
   } else if (format === 'excel') {
     task = `Use the attached workbook to produce ${work.output}. Validate the data, calculate at least three role-relevant measures, compare two meaningful segments, identify the main driver or exception, and ${proof.requirement}. Recommend one action with an owner and success measure. ${levelNote}`
     guidance = `Submit an auditable workbook and a concise ${role.name} recommendation. Show formulas or pivot logic and distinguish calculated evidence from assumptions.`
@@ -707,10 +816,15 @@ function realisticRoleWorkSample(question: Question, format: QuestionFormat, rol
     task = `${communicationTask} ${levelNote}`
     guidance = 'Write 120–200 words as the finished workplace communication, not a description of how you would write it.'
   } else {
-    task = `Produce ${work.output} for this situation. ${work.actions[0].toUpperCase()}${work.actions.slice(1)}; ${proof.requirement}. Include the first action you would take, the artifact or system record you would create, and the condition that would make you escalate or change course. ${levelNote}`
-    guidance = `Answer as a ${role.name} work sample. We assess the usability of the output, role-specific judgement, prioritization, and measurable follow-through.`
+    if (directInteraction) {
+      task = `Handle the interaction as the ${role.name} professional receiving it. Start with the exact words or action you would use with ${interactionAudience(role, question.competency)}, then ${proof.requirement}. Add the system record or handoff you would create, the decision or commitment you seek, and the condition that would make you escalate or change course. ${levelNote}`
+      guidance = `Give the actual response and job artifact, not a description of your approach. We assess ${question.competency.toLowerCase()}, judgement, ownership, and follow-through.`
+    } else {
+      task = `Produce ${work.output} for this situation. ${work.actions[0].toUpperCase()}${work.actions.slice(1)}; ${proof.requirement}. Include the first action you would take, the artifact or system record you would create, and the condition that would make you escalate or change course. ${levelNote}`
+      guidance = `Answer as a ${role.name} work sample. We assess the usability of the output, role-specific judgement, prioritization, and measurable follow-through.`
+    }
   }
-  return { ...question, task, prompt: `${question.scenario} ${task}`, guidance }
+  return { ...question, scenario, task, prompt: `${scenario} ${task}`, guidance }
 }
 
 function industryRiskScenario(industry: Industry, competency: string) {
