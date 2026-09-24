@@ -1,0 +1,90 @@
+tasks:
+  install-dependencies:
+    name: Install dependencies
+    description: Install the locked Node.js dependencies
+    command: npm ci
+    triggeredBy:
+      - manual
+      - postDevcontainerStart
+      - prebuild
+
+  build:
+    name: Build application
+    description: Compile the frontend and backend
+    command: npm run build
+    triggeredBy:
+      - manual
+    dependsOn:
+      - install-dependencies
+
+  lint:
+    name: Lint application
+    description: Run the repository ESLint checks
+    command: npm run lint
+    triggeredBy:
+      - manual
+    dependsOn:
+      - install-dependencies
+
+  test:
+    name: Run tests
+    description: Run the server and frontend test suites
+    command: npm test
+    triggeredBy:
+      - manual
+    dependsOn:
+      - install-dependencies
+
+services:
+  database:
+    name: PostgreSQL
+    description: Local PostgreSQL database for the full-stack server
+    triggeredBy:
+      - manual
+      - postEnvironmentStart
+    commands:
+      start: |
+        ona environment port open 5432 --admission creator_only --name "PostgreSQL"
+        docker rm -f zobology-postgres >/dev/null 2>&1 || true
+        docker run --rm --name zobology-postgres \
+          -e POSTGRES_USER=zobology \
+          -e POSTGRES_PASSWORD=zobology \
+          -e POSTGRES_DB=zobology \
+          -p 5432:5432 \
+          postgres:16-alpine
+      ready: docker exec zobology-postgres pg_isready -U zobology -d zobology
+      stop: docker stop zobology-postgres
+
+  backend:
+    name: Application backend
+    description: Built Express API and production-style frontend server
+    triggeredBy:
+      - manual
+      - postEnvironmentStart
+    commands:
+      start: |
+        ona environment port open 10000 --admission creator_only --name "Application backend"
+        export DATABASE_URL=postgresql://zobology:zobology@localhost:5432/zobology
+        export NODE_ENV=development
+        export PORT=10000
+        export VITE_BACKEND_MODE=render
+        until docker exec zobology-postgres pg_isready -U zobology -d zobology >/dev/null 2>&1; do sleep 1; done
+        test -d node_modules || npm ci
+        npm run build
+        npm start
+      ready: curl -fsS http://localhost:10000/api/health
+
+  frontend:
+    name: Frontend development server
+    description: Vite development server for the browser-only frontend
+    triggeredBy:
+      - manual
+      - postEnvironmentStart
+    commands:
+      start: |
+        ona environment port open 5173 --admission creator_only --name "Frontend development server"
+        export ONA_EXPOSED_HOST="$(ona environment port get 5173 -f URL | cut -c 9-)"
+        export __VITE_ADDITIONAL_SERVER_ALLOWED_HOSTS="$ONA_EXPOSED_HOST"
+        test -d node_modules || npm ci
+        npm run dev
+      ready: curl -fsS http://localhost:5173/

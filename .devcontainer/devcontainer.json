@@ -1,0 +1,9 @@
+{
+	"name": "Zobology",
+	"image": "mcr.microsoft.com/devcontainers/javascript-node:22-bookworm",
+	"features": {
+		"ghcr.io/devcontainers/features/docker-in-docker": {
+			"moby": false
+		}
+	}
+}
