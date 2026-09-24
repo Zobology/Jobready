@@ -12,7 +12,18 @@ The bank is generated from every tab in `Job_Readiness_Role_Industry_Master_Matr
 | Role × Industry | 90 roles × 60 industries | 5,400 |
 | **Total** |  | **7,134** |
 
-An assembled assessment draws 10 core items, 8 role items, 5 industry items, and one integrated simulation. Previously used core items are deprioritized so a candidate taking assessments for multiple role–industry targets receives a fresh core section until the available variants are exhausted.
+An assembled assessment draws 3 core items, 5 role items, 2 industry items, and one separate integrated simulation. The ten standard questions contain two audio responses, three Excel exercises, two written-communication tasks, and three situational tasks. Previously used core items are deprioritized so a candidate taking assessments for multiple role–industry targets receives fresh core evidence until the available variants are exhausted.
+
+## Work-sample design rules
+
+- Response formats are matched to observable capabilities instead of being assigned only by question order. For example, a sales assessment uses audio for persuasion, Excel for conversion analysis, and written communication for customer follow-up.
+- Questions in one assessment must require different work outputs; changing only the competency label or wording is not a distinct question.
+- Scenarios state the information, constraints, authority, audience, and expected output needed to answer without inventing an entire workplace context.
+- Entry-level tasks focus on execution within the candidate's authority and make approval or escalation explicit. Higher levels add independent ownership, trade-offs, governance, and strategic impact.
+- Role questions combine a role-family operating situation with a competency-specific proof artifact. The generator covers analytical, commercial, customer, people, operations, technology, governance, communications, advisory, and coordination work rather than merely inserting a competency name into one common case.
+- Industry questions use operating-risk patterns for financial services, technology, consumer, healthcare, industrial, energy/infrastructure, logistics/travel, media, professional services, education, hospitality, and public/social-impact sectors.
+- Integrated simulations use the actual workflow of the target role family—such as triaging customer cases, resolving a release issue, prioritizing sales opportunities, rebuilding a project plan, or preparing a control decision.
+- An exhaustive regression check generates all 90 roles × 60 industries × 4 levels and rejects missing scenarios, repeated tailored work samples, incorrect format mixes, generic legacy wording, unsynchronized prompts, and missing seniority boundaries.
 
 ## Required tags
 

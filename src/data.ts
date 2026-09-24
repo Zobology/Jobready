@@ -4,6 +4,7 @@ import type { CandidateProfile } from './reviewTypes'
 
 export type Dimension = 'core' | 'role' | 'industry' | 'simulation'
 export type QuestionFormat = 'audio' | 'excel' | 'written_communication' | 'situational' | 'simulation'
+type StandardQuestionFormat = Exclude<QuestionFormat, 'simulation'>
 
 export interface Competency {
   name: string
@@ -188,7 +189,7 @@ function selectMixed(items: QuestionBankItem[], total: number, applicationCount:
 }
 
 const levelComplexity: Record<TargetBand, string> = {
-  entry: 'Limit your plan to actions you could complete or escalate during the next five working days, and state any assumptions you make because information is missing.',
+  entry: 'Focus on actions within an entry-level employee’s authority, identify what you would ask your manager to approve or escalate, and state any assumptions you make.',
   associate: 'Assume you own the task independently: identify who you would align, what you would decide, and what you would complete during the next two weeks.',
   mid: 'Address incomplete evidence, competing cross-functional priorities, implementation risk, and measurable trade-offs.',
   senior: 'Frame the decision for senior leadership, including strategic trade-offs, governance, second-order consequences, and organizational impact.',
@@ -207,6 +208,10 @@ function stableIndex(value: string, length: number) {
 }
 
 function roleContextFamily(roleName: string) {
+  if (/Legal|Compliance|\bRisk\b|Audit|Tax/i.test(roleName)) return 'governance'
+  if (/Corporate Communications|Public Relations|Investor Relations/i.test(roleName)) return 'communications'
+  if (/Consulting|Strategy|Transformation|Research \/ Advisory/i.test(roleName)) return 'advisory'
+  if (/Administration/i.test(roleName)) return 'coordination'
   if (/HR|Talent|People|Recruit|Employee|Learning|Compensation/i.test(roleName)) return 'people'
   if (/Software|Technology|Product|Cloud|Cyber|QA|Engineering|IT\b|IT Service/i.test(roleName)) return 'technology'
   if (/Customer|Client|Service|Success|Relationship|Support|Contact Center/i.test(roleName)) return 'service'
@@ -217,6 +222,26 @@ function roleContextFamily(roleName: string) {
 }
 
 const workContexts: Record<string, WorkContext[]> = {
+  governance: [
+    { businessEvidence: 'a control exception affects 17% of sampled cases, supporting evidence is missing for one decision path, and the issue has not been assigned a remediation owner', stakeholders: 'the business owner, Legal/Compliance, and Internal Audit or Quality', deadline: 'the next control review in five working days' },
+    { businessEvidence: 'a proposed policy interpretation would speed delivery, but two comparable cases were handled differently and the approval record is incomplete', stakeholders: 'the policy owner, Operations, and Risk or Legal', deadline: 'an approval decision this Friday' },
+    { businessEvidence: 'reported incidents are up 23%, one process stage creates most exceptions, and current monitoring would detect the issue only after customer or financial impact', stakeholders: 'the control owner, Technology/Operations, and senior management', deadline: 'the monthly risk review next week' },
+  ],
+  communications: [
+    { businessEvidence: 'a draft public claim is not fully supported, stakeholder questions have doubled, and different channels currently use inconsistent wording', stakeholders: 'Communications, Legal/Compliance, and the accountable business leader', deadline: 'publication approval tomorrow' },
+    { businessEvidence: 'sentiment has declined after a service issue, one unverified explanation is circulating externally, and customer-facing teams need an approved response', stakeholders: 'the business owner, Customer Service, and Communications', deadline: 'the next external update in four working days' },
+    { businessEvidence: 'performance is below guidance, one variance is temporary while another may persist, and the supporting analysis is still being validated', stakeholders: 'Finance, executive leadership, and Communications or Investor Relations', deadline: 'the scheduled stakeholder briefing next week' },
+  ],
+  advisory: [
+    { businessEvidence: 'the client’s target is 12% above current performance, one segment creates more than half of the gap, and two proposed explanations conflict', stakeholders: 'the client sponsor, the functional owner, and the analysis team', deadline: 'the steering discussion in five working days' },
+    { businessEvidence: 'the preferred option has the fastest payback but depends on an untested customer assumption and a constrained implementation team', stakeholders: 'the decision owner, Finance, and Operations or Technology', deadline: 'the option review next week' },
+    { businessEvidence: 'the baseline is incomplete, teams define success differently, and only one of three initiatives can be funded this cycle', stakeholders: 'the executive sponsor, initiative owners, and Finance', deadline: 'the prioritization workshop this Friday' },
+  ],
+  coordination: [
+    { businessEvidence: 'two executive meetings overlap, one decision pack is incomplete, and a critical external participant has not confirmed availability', stakeholders: 'the meeting owners, contributors, and the external participant', deadline: 'the final schedule and pack release tomorrow' },
+    { businessEvidence: 'a workplace vendor has missed two service commitments, invoices differ from the agreed scope, and an upcoming event depends on resolution', stakeholders: 'the vendor, Finance or Procurement, and the internal service owner', deadline: 'the event-readiness review in four working days' },
+    { businessEvidence: 'records are stored in inconsistent locations, one approval cannot be traced, and teams are working from different document versions', stakeholders: 'document owners, the approving manager, and affected users', deadline: 'the compliance and handover check next week' },
+  ],
   operations: [
     { businessEvidence: 'work volume has risen 18%, average turnaround time has increased from 22 to 31 hours, and exceptions are up 27%', stakeholders: 'Operations, Customer Experience, and Finance', deadline: 'the weekly operating review in five working days' },
     { businessEvidence: 'output is 11% below plan, rework has increased from 6% to 10%, and one hand-off accounts for almost half of all delays', stakeholders: 'the process owner, Quality, and the downstream business team', deadline: 'a recovery-plan meeting next Monday' },
@@ -280,6 +305,161 @@ function industryAreas(industry: Industry, item: QuestionBankItem) {
   return first === second ? first : `${first} and ${second}`
 }
 
+type WorkDefinition = {
+  setup: string
+  output: string
+  actions: string
+}
+
+function competencyProof(competency: string, roleName = '') {
+  const value = competency.toLowerCase()
+  if (value === 'sourcing' && /Talent|Recruit|HR|People/i.test(roleName)) return {
+    detail: 'The current source mix produces applicant volume but not enough qualified candidates.',
+    requirement: 'name the priority candidate source, search or outreach logic, qualification screen, and source-quality measure',
+  }
+  const matches: Array<[RegExp, string, string]> = [
+    [/\bsql\b/, 'A sample extract and the KPI definition are available, but the join and filter logic have not been validated.', 'include the query or pseudocode, join keys, filters, aggregation logic, and validation checks'],
+    [/\bexcel\b/, 'The source workbook contains raw rows but no controlled calculation or summary view.', 'include the formulas, lookup or pivot logic, error checks, and a decision-ready summary'],
+    [/statistic|experiment|model evaluation/, 'The observed movement may reflect normal variation, selection bias, or a real effect.', 'select and justify the analytical method, quantify uncertainty, and state what the result can and cannot support'],
+    [/visual|dashboard/, 'The current chart hides the segment driving the result and gives no indication of data quality.', 'specify the chart or dashboard layout, measures, filters, annotations, and the decision each view supports'],
+    [/screening/, 'The existing screen is applied inconsistently and rejects some potentially suitable cases.', 'write the screening criteria, evidence threshold, decision record, and rule for borderline cases'],
+    [/interview/, 'Interviewers use different questions and scoring standards for the same requirement.', 'write structured questions, evidence probes, scoring anchors, and the method for combining interviewer evidence'],
+    [/seo/, 'Organic traffic is rising on informational pages but not on the pages tied to the target outcome.', 'identify the search intent, target page, on-page or technical change, and ranking-to-outcome measure'],
+    [/\bsem\b|paid media|roas/, 'Spend is concentrated in a campaign with high clicks but weak downstream completion.', 'specify the campaign or ad-group change, keyword or audience control, budget rule, and conversion measure'],
+    [/social|community/, 'One content theme has strong reach but also the highest negative-comment and opt-out rate.', 'draft the post or response approach, moderation rule, publishing choice, and engagement-quality measure'],
+    [/content|storytelling/, 'The audience has seen the facts but does not understand the implication or next action.', 'provide the headline, narrative structure, proof points, call to action, and channel or editorial choice'],
+    [/forecast|demand planning/, 'Recent actuals show bias and a recurring seasonal or event-driven pattern.', 'show the forecast logic, baseline, adjustment, error measure, and assumption that would trigger a revision'],
+    [/inventory|safety stock|replenish/, 'Fast-moving items face stock-out risk while slow-moving stock ties up capacity or cash.', 'segment the items, calculate the relevant stock measure, set the replenishment action, and define the exception rule'],
+    [/logistics|routing|shipment|transport/, 'One route or hand-off creates most late deliveries and avoidable cost.', 'identify the route or hand-off change, carrier or capacity decision, operational constraint, and cost-versus-SLA measure'],
+    [/procurement|supplier|sourcing|rfx/, 'The lowest-price option has weaker service, quality, or continuity evidence.', 'build the evaluation criteria and weights, compare the options, document the negotiation point, and state the award condition'],
+    [/programming|algorithm|debug/, 'A reproducible failure occurs for one input pattern while the normal path still works.', 'show the logic or pseudocode, isolate the failure, propose the change, and list regression and edge-case tests'],
+    [/\bapis?\b|integration/, 'The producer and consumer disagree on required fields, error behavior, and retry ownership.', 'define the request and response contract, validation, error handling, security check, and integration test'],
+    [/version control/, 'A release contains overlapping changes and the team needs a safe correction path with traceability.', 'specify the branch and review approach, commit or rollback sequence, conflict control, and release evidence'],
+    [/test|qa|defect/, 'The happy path passes, but a high-impact edge case is not covered by the current suite.', 'write test cases with preconditions, steps and expected results, set defect severity, and state release impact'],
+    [/requirement|business analysis/, 'Stakeholders use the same term for different outcomes and acceptance is not defined.', 'write the requirement, business rule, acceptance criteria, dependency, and open question'],
+    [/process map|workflow|lean|six sigma|rca|root.cause/, 'The same exception enters through more than one path and is corrected manually downstream.', 'show the relevant process steps, failure point, root-cause evidence, future-state change, and control measure'],
+    [/policy interpretation|legal research|compliance/, 'The rule is clear in principle but its application to one case is disputed.', 'cite the governing requirement, map facts to criteria, document the interpretation and limitation, and identify approval or escalation'],
+    [/accounting|reconcil|bookkeep/, 'The ledger and supporting record differ and the timing or classification is unclear.', 'show the reconciliation, supporting evidence, proposed treatment or entry, control impact, and reviewer sign-off'],
+    [/valuation|capital budgeting|cash flow|funding/, 'The preferred option changes when one commercial assumption moves within a plausible range.', 'show cash flows and assumptions, calculate the decision measure, test sensitivity, and state the approval recommendation'],
+    [/credit|underwriting/, 'The applicant meets the headline threshold but cash-flow or documentation evidence creates a material exception.', 'calculate the relevant capacity or risk measure, list exceptions and mitigants, and record the approve-decline-refer recommendation'],
+    [/audit planning|audits|sampling|evidence/, 'The review population is large, but the highest-risk items and the evidence standard have not been agreed.', 'define scope and material risk, select and justify the sample or test, list evidence required, and write the finding and follow-up rule'],
+    [/tax fundamentals|tax analysis/, 'A transaction has more than one plausible treatment and the supporting documentation is incomplete.', 'map the facts to the applicable rule, show the calculation or exposure, list documentation required, and draft the treatment and review note'],
+    [/kpi|metric|reporting|analytics|data interpretation|financial analysis|ratios|insight/, 'The current report shows a result but not its definition, driver, reliability, or decision use.', 'define the measure, show its calculation and source, segment the result, explain the driver, and state the decision or action it supports'],
+    [/planning|roadmap|budgeting|capacity|staffing|workforce|scheduling|material planning|scenario planning|seasonality|consensus planning|end-to-end planning/, 'The agreed objective exceeds available time, people, money, or capacity under the current assumptions.', 'show demand and capacity assumptions, prioritize the allocation, sequence dependencies, model one alternative, and state the replanning trigger'],
+    [/customer journey|employee journey|student lifecycle|onboarding|adoption|retention|health scoring|qbr|service delivery|service quality|service recovery|issue resolution|case management|candidate experience|engagement/, 'One stage of the journey creates most delay, drop-off, or dissatisfaction, but ownership crosses team boundaries.', 'map the relevant journey stage, identify the failure and affected segment, draft the intervention and communication, assign ownership, and define recovery evidence'],
+    [/strategy|strategic|competitive analysis|market analysis|market sizing|portfolio|business case|hypothesis|structured thinking|business diagnosis/, 'The decision owner has several plausible options but no agreed basis for choosing among them.', 'frame the decision, size or test the key assumption, compare options against explicit criteria, identify downside and dependencies, and recommend a direction'],
+    [/communicat|messag|briefing|executive writing|media relations|press material|disclosure|reputation|crisis|advisory writing|client communication|financial communication/, 'The same facts must be communicated to audiences with different knowledge, concerns, and disclosure needs.', 'draft the audience-specific message, identify the approved proof points and prohibited or uncertain claims, set the call to action, and map approval and response handling'],
+    [/execution|dependency|issue management|coordination|governance|readiness|implementation|cutover|launch readiness|transformation|change impact|tom\b/, 'A milestone depends on unresolved ownership, readiness, or a decision outside the delivery team.', 'update the action, dependency, risk, or readiness record, show impact on scope and timing, recommend a recovery choice, and draft the owner escalation'],
+    [/hr process|hris|employee lifecycle|succession|career development|potential|talent review|pay structure|benchmarking|benefits|people data|workforce analytics/, 'The people decision affects employees differently and the current record or criteria are not consistently applied.', 'define the employee population and decision criteria, analyze fairness and impact, document the recommendation and approval, and specify the HR record and communication required'],
+    [/research design|secondary research|qualitative research|survey|data collection|synthesis|research\b|industry research|audience research|consumer insights/, 'The stakeholder needs an answer, but source quality, sample coverage, and conflicting evidence could change the conclusion.', 'write the research question, source or sampling plan, evaluation criteria, synthesis table, limitations, and decision-oriented conclusion'],
+    [/cloud|network|reliability|monitoring|threat|incident|troubleshoot|service desk|architecture awareness|technology assessment/, 'A user-visible or control-relevant technology failure is reproducible, but the affected component and safe recovery step are not confirmed.', 'write the triage evidence, likely fault domain, diagnostic sequence, containment or recovery step, escalation record, and monitoring or prevention check'],
+    [/product metric|product process|funnel|cohort|user behaviour|prioritization|roadmap|growth loop|conversion optimization|acquisition economics/, 'Users enter the journey but one segment does not reach the intended outcome, and several possible changes compete for capacity.', 'define the user and business problem, quantify the funnel or cohort gap, rank hypotheses or opportunities, write the experiment or requirement, and set success and guardrail metrics'],
+    [/\bcac\b|attribution|segmentation|bias|demand sensing|variance analysis|cost analysis/, 'The overall result masks a material difference in source, segment, timing, or cost efficiency.', 'define and calculate the measure, segment the result, test bias or attribution assumptions, explain the driver, and state the budget or operating decision'],
+    [/brand|campaign|positioning|gtm|platform strategy|audience|editorial|enablement/, 'The target audience, proposition, and channel plan are not aligned to the same customer insight.', 'write the audience and insight, positioning or message, channel and content choice, execution brief, and brand or performance measure'],
+    [/receiving|putaway|picking|packing|warehouse|stock accuracy|shrinkage|adherence|aht|fcr|sla|productivity|workforce coordination/, 'A specific operating step creates most delay or error and the team is compensating with manual effort.', 'map the step and standard, calculate volume and performance gap, redesign allocation or flow, define the supervisor control, and set the shift-level measure'],
+    [/property|leasing|transaction support|real estate/, 'Two property options differ on total cost, utilization, obligations, and execution risk.', 'build the option comparison, show commercial assumptions and obligations, identify due diligence, recommend the transaction or management action, and state approval conditions'],
+    [/vendor management|workplace service|administration|coordination/, 'A supplier or internal service commitment is at risk and the supporting schedule, scope, or approval record is incomplete.', 'update the schedule or service log, reconcile scope and evidence, coordinate the affected parties, recommend the recovery or vendor action, and record approval and closure'],
+    [/quality framework|corrective action|quality\b|kaizen|waste elimination|improvement design|benefits tracking/, 'A recurring defect is being corrected after occurrence, but prevention and effectiveness checks are not defined.', 'write the defect or waste statement, root-cause evidence, containment and corrective action, owner and due date, and effectiveness measure'],
+    [/account planning|account research|strategic account|relationship building|relationship mapping|service review|cross-sell|upsell|prospecting|lead generation|qualification|pipeline/, 'The opportunity or account has incomplete need, stakeholder, value, and next-step information.', 'map the account or lead, identify decision roles and needs, set qualification and priority, draft the outreach or review action, and record the pipeline or account-plan update'],
+    [/consultative selling|negotiation|outreach|market mapping|partnership/, 'The opportunity appears attractive, but fit, decision authority, value exchange, and terms are not yet aligned.', 'map the prospect or partner, write discovery and value questions, prepare the proposal or outreach, define negotiation boundaries, and record the next commitment'],
+    [/solution understanding|proposal support|demo|rfp\/rfi|solution design|solution thinking|prototyping|information architecture|interaction design|usability/, 'The requested solution is described at a high level, but fit, evidence, and acceptance are not yet demonstrated.', 'translate needs into solution criteria, produce the outline, demo, prototype, or response section, address a limitation, and define validation and acceptance'],
+    [/case solving|problem solving|\banalysis\b|constraint|scope/, 'The requested outcome is clear, but the problem boundary, constraints, and decision criteria are not.', 'structure the problem, separate facts and assumptions, prioritize hypotheses or options, test the critical evidence, and make the decision recommendation'],
+    [/contact handling|empathy|listening|expectation management|stakeholder service/, 'The person affected has described an urgent symptom, but the underlying need, impact, and acceptable resolution are not confirmed.', 'write the opening and clarification questions, acknowledge impact, set an accurate expectation, choose resolution or escalation, and document the interaction'],
+    [/dependenc|stakeholder impact|stakeholder management|stakeholders|facilitation|escalation/, 'Progress depends on people with different authority, impact, and information needs.', 'map stakeholders and dependencies, define the decision and owner, prepare the alignment conversation, document commitments, and set the escalation trigger'],
+    [/financial statement|financial modelling|financial analysis|performance/, 'The reported result and underlying business movement do not reconcile without an additional driver or timing assumption.', 'reconcile the financial views, show the model or bridge, test the key assumption, explain cash or value impact, and recommend the management action'],
+    [/needs analysis|learning design|training|assessment|intervention/, 'The requested learning solution has been chosen before the performance need and transfer conditions were validated.', 'define the performance gap and audience, identify whether learning is the cause, design the learning and practice activity, plan transfer support, and measure behavior and outcome'],
+    [/patient operations|academic process|process management|process analysis|process performance|process redesign|\bsops?\b/, 'The documented process and the way work is actually completed differ at a high-volume step.', 'map current and required practice, quantify the gap, rewrite the critical process or SOP step, assign the control and training, and measure compliance and outcome'],
+    [/python|data preparation|data modelling|modelling fundamentals|automation basics|configuration|tooling/, 'The current manual or technical approach is not reproducible and does not handle an important data or operating exception.', 'provide the code, configuration, data model, or automation logic, document inputs and controls, handle the exception, and define test and monitoring evidence'],
+    [/spend analysis/, 'Spend is fragmented across suppliers and categories, with inconsistent price and service evidence.', 'clean and classify spend, identify concentration and variance, select the sourcing opportunity, quantify value, and define supplier or negotiation action'],
+    [/documentation|\bpolicy\b|standards/, 'The current record does not make the requirement, decision, owner, and version history auditable.', 'draft the policy, procedure, or decision record section, cite the source requirement, define owner and approval, and specify version and retention controls'],
+    [/experience design/, 'The current journey solves the process requirement but creates avoidable effort or uncertainty for the user.', 'map the user moment and need, identify the friction, sketch the improved interaction or service, define accessibility or constraint checks, and set usability evidence'],
+    [/media\b|investor material/, 'External stakeholders need a timely message, but one proof point is incomplete and the likely follow-up questions are known.', 'draft the headline and supporting messages, qualify the uncertain point, prepare the Q&A or material section, map approval, and define response monitoring'],
+    [/thesis building/, 'The positive case is visible, but valuation, catalyst, and downside evidence are not yet connected.', 'state the thesis, supporting evidence and valuation view, identify catalysts and disconfirming evidence, quantify downside, and define the recommendation'],
+    [/\babc\b/, 'Items with very different value and demand behavior currently follow the same inventory policy.', 'perform the ABC segmentation, show the basis and exceptions, set service and review rules by class, and quantify the inventory and availability impact'],
+    [/discovery|voc|user research/, 'The requester has described a desired solution but not the underlying need or success condition.', 'write the question sequence, evidence source, synthesis method, and decision the discovery will inform'],
+    [/objection/, 'The stated concern may be about price, risk, authority, timing, or fit and has not yet been clarified.', 'write the exact response, clarification question, evidence-based value point, and next-step or disqualification rule'],
+    [/pitch|persuasion|solution selling/, 'The proposed value has not yet been connected to the audience’s confirmed priority.', 'write the audience-specific opening, need-to-benefit link, proof point, responsible claim, and requested commitment'],
+    [/risk|control|security|privacy|safety|mitigation/, 'The risk register names the issue but does not show exposure, control effectiveness, or action priority.', 'score likelihood and impact, test the control evidence, define treatment and owner, and set a monitoring trigger'],
+    [/project|raid|dependency|milestone|schedule/, 'A critical dependency has no confirmed owner and now threatens the agreed milestone.', 'update the action or RAID record, show schedule impact, propose recovery options, and draft the escalation decision'],
+  ]
+  const matched = matches.find(([pattern]) => pattern.test(value))
+  return matched
+    ? { detail: matched[1], requirement: matched[2] }
+    : {
+        detail: `The reviewer needs a concrete ${value} artifact rather than a definition of the capability.`,
+        requirement: `include the actual checklist, decision table, calculation, draft, system entry, or other job artifact that best demonstrates ${value}`,
+      }
+}
+
+function competencyWorkDefinition(competency: string): WorkDefinition {
+  const value = competency.toLowerCase()
+  if (/discover|research|requirement|insight|voice of|voc|user need|market map/.test(value)) return {
+    setup: 'The request is still broad and the available evidence is incomplete.',
+    output: 'a discovery brief',
+    actions: 'define the decision, list the questions and sources in priority order, separate facts from assumptions, and state how the findings will change the next action',
+  }
+  if (/pitch|persuasion|objection|negotiat|outreach|cross-sell|upsell|solution sell|consultative sell/.test(value)) return {
+    setup: 'The audience has expressed interest but has challenged the value, fit, or proposed terms.',
+    output: 'a customer or stakeholder conversation plan',
+    actions: 'write the opening, the questions you would ask, the value case you would make, the response to the concern, and the next commitment you would seek',
+  }
+  if (/communicat|story|content|copy|messag|media|report|advisory writing|investor material/.test(value)) return {
+    setup: 'Different audiences need an accurate update before they take action.',
+    output: 'an audience-ready communication',
+    actions: 'lead with the purpose, distinguish evidence from uncertainty, tailor the message, and make the requested decision or next action explicit',
+  }
+  if (/data|analytic|metric|kpi|statistics|excel|sql|dashboard|visual|variance|financial statement|ratio|attribution/.test(value)) return {
+    setup: 'The headline result does not explain which segment or driver created the change.',
+    output: 'an analysis note with an auditable calculation',
+    actions: 'validate the data, calculate the relevant measures, compare meaningful segments, identify the strongest supported driver, and translate it into a decision',
+  }
+  if (/forecast|planning|schedule|capacity|staffing|workforce|inventory|replenish|roadmap|portfolio|pipeline|budget/.test(value)) return {
+    setup: 'Demand and available capacity no longer align, so the current plan cannot be completed as written.',
+    output: 'a prioritized operating plan',
+    actions: 'quantify the gap, rank the work, allocate constrained capacity, identify dependencies, and define the trigger for replanning or escalation',
+  }
+  if (/risk|control|audit|compliance|tax|security|privacy|quality|test|defect|safety|underwriting|credit/.test(value)) return {
+    setup: 'A proposed action may improve the headline result but creates an unresolved control, quality, or compliance concern.',
+    output: 'a risk-and-control review',
+    actions: 'identify the exposure, verify the requirement, assess likelihood and impact, test the relevant control or evidence, and recommend treatment and ownership',
+  }
+  if (/process|lean|six sigma|root.cause|rca|workflow|sop|continuous improvement|productivity|turnaround|sla|aht|fcr/.test(value)) return {
+    setup: 'The team is treating repeated exceptions individually, but the pattern suggests a process problem.',
+    output: 'a current-state diagnosis and improvement experiment',
+    actions: 'map the failure point, quantify the pattern, test likely root causes, propose the smallest safe change, and define the before-and-after measure',
+  }
+  if (/design|develop|programming|api|model|experiment|prototype|architecture|configuration|automation|algorithm|interaction/.test(value)) return {
+    setup: 'The requested solution must be delivered with incomplete requirements and at least one material technical or user constraint.',
+    output: 'a solution outline and validation plan',
+    actions: 'clarify requirements, compare feasible options, show the proposed design or logic, identify failure modes, and specify how you would test acceptance',
+  }
+  if (/journey|onboard|adoption|retention|service|case|issue|empathy|relationship|experience|engagement/.test(value)) return {
+    setup: 'A customer or user is at risk of a poor outcome unless the team coordinates a timely intervention.',
+    output: 'a case-resolution and follow-up plan',
+    actions: 'confirm the need and impact, prioritize the immediate response, coordinate the correct owner, communicate expectations, and record the measure that confirms resolution',
+  }
+  if (/campaign|brand|seo|sem|social|position|go.to.market|gtm|segment|consumer/.test(value)) return {
+    setup: 'Performance differs sharply by audience or channel and the team must decide where to focus the next cycle.',
+    output: 'a campaign or market action brief',
+    actions: 'identify the audience insight, connect it to the proposition and channel, recommend one testable action, define the control or comparison, and set success and stop criteria',
+  }
+  if (/accounting|reconcil|valuation|cash flow|capital|funding|bookkeep|pay structure|benefit|commercial planning/.test(value)) return {
+    setup: 'The reported position contains a material variance or assumption that must be resolved before approval.',
+    output: 'a decision-ready financial workpaper',
+    actions: 'reconcile the figures, show the calculation and assumptions, explain the business impact, test the downside, and recommend the entry, decision, or approval required',
+  }
+  if (/stakeholder|change|facilitat|coordination|governance|expectation|resistance|readiness|dependency/.test(value)) return {
+    setup: 'Teams agree on the goal but not on ownership, sequence, or the acceptable trade-off.',
+    output: 'an alignment and execution brief',
+    actions: 'map interests and decisions, propose owners and sequence, surface the trade-off, define the escalation path, and record how agreement and adoption will be measured',
+  }
+  return {
+    setup: 'The team needs a usable first recommendation rather than a general discussion of the issue.',
+    output: `a practical ${competency.toLowerCase()} work product`,
+    actions: 'identify the relevant evidence, complete the core work, make a justified recommendation, assign the next action, and define an observable result',
+  }
+}
+
 function contextualizeItem(item: QuestionBankItem, role: RoleFamily, industry: Industry, profile: AssessmentProfile): QuestionBankItem {
   const context = workContext(item, role, industry)
   const areas = industryAreas(industry, item)
@@ -292,19 +472,16 @@ function contextualizeItem(item: QuestionBankItem, role: RoleFamily, industry: I
   let guidance = item.guidance
 
   if (item.dimension === 'core') {
-    scenario = `You are ${targetWithArticle}. This situation affects ${areas}, involves ${context.stakeholders}, and requires a decision before ${context.deadline}.`
+    scenario = `You are ${targetWithArticle}. In work affecting ${areas}, ${context.businessEvidence}. The situation involves ${context.stakeholders} and requires a decision before ${context.deadline}.`
     task = item.prompt
     prompt = `${scenario} ${task}`
     guidance = `${guidance} Make your response specific to the stated role, industry context, stakeholders, and decision deadline.`
   } else if (item.dimension === 'role') {
-    scenario = `You are ${targetWithArticle}. In work involving ${areas}, ${context.businessEvidence}. The stakeholders—${context.stakeholders}—have different views on the cause and priority, and you must prepare a recommendation before ${context.deadline}.`
-    if (isApplicationItem(item)) {
-      task = `Using ${item.competency.toLowerCase()}, explain how you would diagnose the situation, what information you would request from each relevant team, how you would align priorities and owners, and which measures would show that your plan worked.`
-      guidance = 'Structure your answer as: diagnosis, evidence required, stakeholder coordination, prioritized actions with owners/timing, and success measures.'
-    } else {
-      task = `Before the team acts, explain the purpose of ${item.competency.toLowerCase()} in this situation, the decision it should support, and one common mistake that could lead to a poor outcome.`
-      guidance = 'Connect the concept directly to the evidence, stakeholders, decision, and business outcome in the scenario.'
-    }
+    const work = competencyWorkDefinition(item.competency)
+    const proof = competencyProof(item.competency, role.name)
+    scenario = `You are ${targetWithArticle}. In work involving ${areas}, ${context.businessEvidence}. ${work.setup} ${proof.detail} Your immediate responsibility is ${work.output} focused on ${item.competency.toLowerCase()}; ${context.stakeholders} are involved, and it is due before ${context.deadline}.`
+    task = `Produce ${work.output}: ${work.actions}.`
+    guidance = 'Submit the actual workplace output requested, using the scenario evidence and clearly marking assumptions or information that still needs validation.'
     prompt = `${scenario} ${task}`
   } else if (item.dimension === 'industry') {
     scenario = `You are supporting ${role.name} in a mid-sized ${industry.name} organization. In an area covering ${areas}, ${context.businessEvidence}. A recommendation is required before ${context.deadline}.`
@@ -427,16 +604,212 @@ function sampleDataTask(question: Question, role: RoleFamily, industry: Industry
   }
 }
 
-const formatByDimension: Record<Exclude<Dimension, 'simulation'>, QuestionFormat[]> = {
+const formatByDimension: Record<Exclude<Dimension, 'simulation'>, StandardQuestionFormat[]> = {
   core: ['audio', 'excel', 'written_communication'],
   role: ['audio', 'excel', 'written_communication', 'situational', 'situational'],
   industry: ['excel', 'situational'],
 }
 
+const formatSignals: Record<StandardQuestionFormat, RegExp[]> = {
+  audio: [/pitch/i, /persuasion/i, /presentation/i, /negotiation/i, /facilitation/i, /interview/i, /communication/i, /stakeholder/i, /relationship/i, /service recovery/i, /empathy/i, /escalation/i],
+  excel: [/conversion/i, /pipeline/i, /forecast/i, /analytics?/i, /reporting/i, /financial/i, /budget/i, /measurement/i, /planning/i, /data/i, /metric/i, /kpi/i, /capacity/i, /productivity/i, /inventory/i, /valuation/i, /attribution/i, /testing/i, /quality/i, /monitor/i, /defect/i, /incident/i, /audit/i, /control/i, /risk/i, /compliance/i, /performance/i, /spend/i, /schedule/i, /adoption/i],
+  written_communication: [/customer communication/i, /stakeholder communication/i, /documentation/i, /copy/i, /content/i, /reporting/i, /outreach/i, /research/i, /policy/i, /requirements/i, /messaging/i, /briefing/i],
+  situational: [/discovery/i, /objection/i, /problem/i, /decision/i, /risk/i, /service/i, /relationship/i, /incident/i, /quality/i, /control/i, /adoption/i, /process/i],
+}
+
+function assignRoleFormats(questions: Question[]) {
+  const formats = formatByDimension.role
+  let bestScore = Number.NEGATIVE_INFINITY
+  let bestOrder = questions.map((_question, index) => index)
+  const score = (question: Question, format: StandardQuestionFormat) => {
+    const evidence = `${question.competency} ${question.tags.join(' ')}`
+    return formatSignals[format].reduce((total, signal, signalIndex) => total + (signal.test(evidence) ? 30 - signalIndex : 0), 0)
+  }
+  const search = (order: number[], remaining: number[], total: number) => {
+    if (!remaining.length) {
+      if (total > bestScore) {
+        bestScore = total
+        bestOrder = order
+      }
+      return
+    }
+    const format = formats[order.length]
+    remaining.forEach((questionIndex, index) => {
+      search([...order, questionIndex], [...remaining.slice(0, index), ...remaining.slice(index + 1)], total + score(questions[questionIndex], format))
+    })
+  }
+  search([], questions.map((_question, index) => index), 0)
+  return new Map(bestOrder.map((questionIndex, slotIndex) => [questions[questionIndex].id, formats[slotIndex]]))
+}
+
+function consumerOffering(industry: Industry) {
+  if (/education|edtech|learning/i.test(industry.name)) return 'a ₹48,000, 16-week data-analytics certificate with weekend classes and career support'
+  if (/bank|financial|fintech|insurance/i.test(industry.name)) return 'a consumer financial product with a monthly fee and eligibility conditions'
+  if (/health|wellness|fitness/i.test(industry.name)) return 'a six-month consumer health and wellness plan'
+  if (/travel|hospitality/i.test(industry.name)) return 'a five-night family travel package with optional add-ons'
+  if (/retail|e-?commerce/i.test(industry.name)) return 'a premium consumer product with delivery, warranty, and return conditions'
+  return `a consumer ${industry.name} product with multiple plans and eligibility conditions`
+}
+
+function b2cSalesWorkSample(question: Question, format: QuestionFormat, role: RoleFamily, industry: Industry, profile: AssessmentProfile) {
+  if (role.name !== 'B2C Sales' || question.dimension !== 'role') return question
+  const offering = consumerOffering(industry)
+  const levelNote = levelComplexity[targetBand(profile.level)]
+  let scenario: string
+  let task: string
+  let guidance: string
+
+  if (format === 'audio') {
+    scenario = `An inbound prospect is considering ${offering}. They want a better career outcome, can only commit time on weekends, and say the price is higher than a competing option. You have not yet confirmed their decision criteria or whether the program is suitable.`
+    task = 'Record the next 60–90 seconds of the sales conversation. Acknowledge the concern, ask focused discovery questions, connect only the relevant benefits to the stated need, and agree a specific next step without inventing claims or offering an unauthorized discount.'
+    guidance = 'Respond as if the prospect is on the call. We assess listening, question quality, relevance of the pitch, responsible persuasion, and the clarity of the next step.'
+  } else if (format === 'excel') {
+    scenario = `Your team lead gives you a workbook showing monthly leads, conversions, revenue, acquisition cost, cancellations, and customer score by channel and region for ${offering}. The next week’s follow-up capacity is limited, so the team cannot pursue every channel equally.`
+    task = 'Use the workbook to calculate conversion rate, cost per conversion, revenue per conversion, and cancellation rate. Identify the strongest and weakest channel or region, show the formulas or pivot logic you used, and recommend where the team should focus next week and one issue it should investigate.'
+    guidance = 'Submit the completed workbook plus a concise explanation. Your recommendation must cite calculated evidence and must not treat high lead volume alone as strong sales performance.'
+  } else if (format === 'written_communication') {
+    scenario = `A prospect completed a counselling call about ${offering}. They care most about weekend availability and career support, asked for the total fee and cancellation terms, and said they need to discuss the decision with their family tonight. They asked you to send the details in writing.`
+    task = 'Draft the follow-up email you would send. Summarize the prospect’s priorities, explain the relevant offer accurately, address the requested fee and cancellation information without pressure, and propose one clear next step with timing.'
+    guidance = 'Write 120–180 words with a useful subject line. We assess personalization, accuracy, tone, structure, and whether the call to action fits the customer’s buying stage.'
+  } else if (/objection/i.test(question.competency)) {
+    scenario = `A qualified prospect says, “This option looks useful, but a competitor is 20% cheaper and promises faster results. Unless you match the price, I will choose them.” They are considering ${offering}. You may not approve discounts and you cannot verify the competitor’s outcome claim.`
+    task = 'Write exactly what you would say next, followed by a short note explaining your reasoning. Clarify the objection, compare value without criticizing the competitor, avoid unsupported promises, and either advance the sale appropriately or record a valid reason not to proceed.'
+    guidance = 'Provide the customer-facing response first, then your rationale and CRM next step. We assess judgement and objection handling, not aggressive closing.'
+  } else {
+    scenario = `A new prospect asks which option they should buy. They mention wanting a career change but have not explained their current skills, target role, timeline, available study time, budget, or who else is involved in the decision. Your manager expects a useful CRM note after the conversation.`
+    task = 'Plan the first five minutes of the conversation: list the questions you would ask in sequence, explain what each answer would help you determine, state when you would disqualify or escalate the lead, and write the CRM note you could complete from the facts currently available.'
+    guidance = 'Do not jump to a recommendation before establishing fit. We assess discovery sequence, listening logic, qualification judgement, and accurate documentation.'
+  }
+
+  task = `${task} ${levelNote}`
+  return { ...question, scenario, task, prompt: `${scenario} ${task}`, guidance }
+}
+
+function realisticRoleWorkSample(question: Question, format: QuestionFormat, role: RoleFamily, industry: Industry, profile: AssessmentProfile, writtenIndex = 0) {
+  if (question.dimension !== 'role') return question
+  if (role.name === 'B2C Sales') return b2cSalesWorkSample(question, format, role, industry, profile)
+  const work = competencyWorkDefinition(question.competency)
+  const proof = competencyProof(question.competency, role.name)
+  const levelNote = levelComplexity[targetBand(profile.level)]
+  let task: string
+  let guidance: string
+
+  if (format === 'audio') {
+    task = `Record a 60–90 second ${role.name} briefing that delivers ${work.output}. Lead with the decision or issue, use the most relevant scenario evidence, summarize how you would ${proof.requirement}, address uncertainty, and close with the action or commitment you need. ${levelNote}`
+    guidance = 'Speak to the stakeholder who must act next. We assess job judgement, message structure, evidence use, audience awareness, and a clear close.'
+  } else if (format === 'excel') {
+    task = `Use the attached workbook to produce ${work.output}. Validate the data, calculate at least three role-relevant measures, compare two meaningful segments, identify the main driver or exception, and ${proof.requirement}. Recommend one action with an owner and success measure. ${levelNote}`
+    guidance = `Submit an auditable workbook and a concise ${role.name} recommendation. Show formulas or pivot logic and distinguish calculated evidence from assumptions.`
+  } else if (format === 'written_communication') {
+    const communicationTask = writtenIndex === 0 || /communicat|client|customer|employee|stakeholder|media|investor/i.test(question.competency)
+      ? `Draft the email or stakeholder message that communicates ${work.output}. Use the scenario facts, state what is known and unresolved, ${proof.requirement}, tailor the tone, and make the requested action, owner, and timing explicit.`
+      : `Write a concise decision memo that turns the scenario evidence into ${work.output}. Structure it as situation, evidence, insight, implication, recommendation, and next action; ${proof.requirement}.`
+    task = `${communicationTask} ${levelNote}`
+    guidance = 'Write 120–200 words as the finished workplace communication, not a description of how you would write it.'
+  } else {
+    task = `Produce ${work.output} for this situation. ${work.actions[0].toUpperCase()}${work.actions.slice(1)}; ${proof.requirement}. Include the first action you would take, the artifact or system record you would create, and the condition that would make you escalate or change course. ${levelNote}`
+    guidance = `Answer as a ${role.name} work sample. We assess the usability of the output, role-specific judgement, prioritization, and measurable follow-through.`
+  }
+  return { ...question, task, prompt: `${question.scenario} ${task}`, guidance }
+}
+
+function industryRiskScenario(industry: Industry, competency: string) {
+  const areas = industry.contexts.slice(0, 3).join(', ')
+  if (/Banking|NBFC|Insurance|FinTech|Investment|Capital Markets|Payments/i.test(industry.name)) return `A growth action affecting ${areas} is ready to launch, but a sample of customer records contains missing eligibility, consent, or control evidence. The commercial target is due this week and the control owner has not approved an exception.`
+  if (/Hospital|Pharma|Medical|Health|Diagnostic/i.test(industry.name)) return `Demand in ${areas} is above plan, but a proposed shortcut could affect patient safety, privacy, quality, or an approved procedure. A frontline stakeholder wants an answer before the next service cycle begins.`
+  if (/Software|IT Services|AI \/ Data|Cybersecurity|Hardware|Cloud/i.test(industry.name)) return `A recent release affecting ${areas} improved adoption, but incidents and support contacts increased in one user segment. The team must decide whether to continue, limit, or reverse the change before the next release window.`
+  if (/E-commerce|Retail|FMCG|Consumer|Fashion|Beauty|Food/i.test(industry.name)) return `A promotion affecting ${areas} increased demand, but returns, complaints, or fulfilment exceptions are concentrated in one channel. The team must decide whether to scale, change, or stop the activity before the next campaign cycle.`
+  if (/Manufacturing|Automotive|Chemicals|Engineering|Construction/i.test(industry.name)) return `Output involving ${areas} is behind plan, and a proposed recovery step would reduce delay but bypass a quality, safety, or supplier control. The next production or site decision is due within five working days.`
+  if (/Infrastructure|Energy|Oil|Renewable/i.test(industry.name)) return `A milestone involving ${areas} is at risk, and the fastest recovery option changes cost, reliability, environmental, or regulatory exposure. Leadership needs a documented recommendation before approving the revised plan.`
+  if (/Logistics|Courier|Aviation|Rail|Shipping|Travel/i.test(industry.name)) return `Volume across ${areas} has shifted unexpectedly, creating service failures in one route or customer segment. An expedited recovery option improves the immediate SLA but increases cost or compliance risk.`
+  if (/Telecom|Media|Entertainment|Advertising|Gaming/i.test(industry.name)) return `An activity involving ${areas} is generating strong reach or usage, but complaints and opt-outs have increased and one claim or content decision is under review. The next publication or campaign decision is due this week.`
+  if (/Consulting|Accounting|Legal|Recruitment|BPO/i.test(industry.name)) return `A client deliverable involving ${areas} is due shortly, but the available evidence contains a material limitation that the client would prefer to omit. Delivery, accuracy, and professional obligations now conflict.`
+  if (/Higher Education|K-12|EdTech|Vocational/i.test(industry.name)) return `A learner-facing claim affecting ${areas} promises a guaranteed outcome, while the approved evidence supports assistance or an expected range rather than a guarantee. A prospective learner has requested written confirmation before paying.`
+  if (/Hotel|Restaurant|Hospitality|Sports/i.test(industry.name)) return `Demand involving ${areas} is above capacity for a peak period, and the proposed response could protect revenue but worsen service recovery, fairness, or customer trust.`
+  if (/Government|NGO/i.test(industry.name)) return `A program affecting ${areas} is under pressure to show rapid results, but the proposed prioritization may exclude a high-need group or weaken procurement, evidence, or public-accountability requirements.`
+  return `A proposed action involving ${areas || industry.focus} improves the headline result but creates an unresolved customer, operational, or governance risk related to ${competency.toLowerCase()}.`
+}
+
+function contextualIndustryWorkSample(question: Question, format: QuestionFormat, role: RoleFamily, industry: Industry, profile: AssessmentProfile) {
+  const levelNote = levelComplexity[targetBand(profile.level)]
+  if (format === 'excel') {
+    const scenario = `The attached ${industry.name} workbook shows performance by period, region, and operating channel for ${industry.contexts.slice(0, 3).join(', ')}. Volume has changed, but cost, completion, exceptions, and outcome quality do not move in the same direction, so the headline total is not enough for a decision.`
+    const task = `Analyze the workbook and recommend one ${industry.name} action. Calculate at least three relevant measures, compare two segments, identify the most decision-relevant exception, and explain how ${question.competency.toLowerCase()} changes your conclusion. ${levelNote}`
+    return { ...question, scenario, task, prompt: `${scenario} ${task}`, guidance: `Submit an auditable workbook and a short recommendation that connects ${industry.name} operating context to a measurable customer, service, risk, or business outcome.` }
+  }
+  const scenario = industryRiskScenario(industry, question.competency)
+  const task = `Make the immediate decision for this situation: state what may continue, pause, or change; identify the evidence or requirement you would verify; draft the message to the affected stakeholder; record the issue and owner; and define the condition for closure. Relate the decision to ${question.competency.toLowerCase()}. ${levelNote}`
+  return { ...question, scenario, task, prompt: `${scenario} ${task}`, guidance: `Balance the operating objective with the customer, quality, regulatory, safety, or trust considerations that matter in ${industry.name}.` }
+}
+
+function b2cSalesSimulation(question: Question, role: RoleFamily, industry: Industry, profile: AssessmentProfile) {
+  if (role.name !== 'B2C Sales') return question
+  const offering = consumerOffering(industry)
+  const scenario = `You begin a shift with three uncontacted leads for ${offering}: (A) a career switcher who requested a callback today and has weekend availability, (B) a student who downloaded a brochure but gave no timeline or budget, and (C) a parent who attended a webinar, asked about outcomes, and is comparing two providers. You have 45 minutes before a scheduled follow-up with an existing prospect who previously objected to price. You cannot promise placement outcomes or approve a discount.`
+  const task = `Create your working plan for the shift. Prioritize the leads and explain why; write the discovery questions for your first conversation; give a short, needs-based pitch for one suitable lead; respond to the price objection; and specify the CRM fields, follow-up actions, and daily measures you would record. ${levelComplexity[targetBand(profile.level)]}`
+  return {
+    ...question,
+    scenario,
+    task,
+    prompt: `${scenario} ${task}`,
+    guidance: 'Treat this as one integrated job simulation. Show lead prioritization, discovery, ethical persuasion, objection handling, time management, and accurate sales-process documentation.',
+    rubric: ['Lead prioritization', 'Discovery quality', 'Needs-based pitch', 'Objection handling', 'Sales-process discipline', 'Customer trust and accuracy'],
+  }
+}
+
+function realisticSimulation(question: Question, role: RoleFamily, industry: Industry, profile: AssessmentProfile) {
+  if (role.name === 'B2C Sales') return b2cSalesSimulation(question, role, industry, profile)
+  const areas = industry.contexts.slice(0, 3).join(', ')
+  const levelNote = levelComplexity[targetBand(profile.level)]
+  let scenario: string
+  let task: string
+
+  if (/Sales|Business Development|Account Management|Pre-sales/i.test(role.name)) {
+    scenario = `You start the week with three opportunities in ${industry.name}: one high-value prospect with unclear decision authority, one existing account reporting a service issue, and one time-sensitive opportunity requesting a concession. Pipeline coverage is below target, delivery capacity is constrained, and all activity must be recorded accurately.`
+    task = 'Prioritize the opportunities, prepare discovery questions for the first conversation, write the value pitch, respond to the concession or objection, define the CRM updates and follow-ups, and state the daily measures you would use.'
+  } else if (/Marketing|Market Research/i.test(role.name)) {
+    scenario = `A ${industry.name} campaign across three channels generated more traffic but fewer completed outcomes, acquisition cost increased, and one audience segment has a higher complaint or opt-out rate. Only one material experiment can launch next cycle.`
+    task = 'Diagnose the funnel, select the audience and channel to prioritize, draft the proposition or message, design one controlled experiment, allocate the available effort, and define success and stop criteria.'
+  } else if (/Data|Analyst|Finance|Accounting|Audit|Tax|Credit|Investment|Research|Strategy|Consulting/i.test(role.name)) {
+    scenario = `Leadership must decide how to respond to a performance gap in ${areas}. Two reports disagree, one segment explains most of the movement, several records are incomplete, and the requested decision is due before every uncertainty can be resolved.`
+    task = 'Define the decision, reconcile or qualify the evidence, show the core analysis, identify the supported driver, compare two options, and produce the recommendation and stakeholder-ready summary.'
+  } else if (/HR|Talent|People|Employee|Learning|Compensation/i.test(role.name)) {
+    scenario = `A ${industry.name} team has rising vacancies or attrition, uneven manager participation, and a measurable performance or experience gap. The available budget supports only one intervention this cycle, and sensitive employee information must be handled appropriately.`
+    task = 'Diagnose the people issue, segment the evidence, choose the priority group, design the intervention and manager communication, define ownership and safeguards, and specify leading and outcome measures.'
+  } else if (/Supply|Logistics|Procurement|Sourcing|Inventory|Demand Planning|Warehouse|Operations|Process|Quality|Workforce/i.test(role.name)) {
+    scenario = `Demand affecting ${areas} is above plan while capacity is constrained. Backlog and exceptions are increasing, one hand-off or supplier creates a disproportionate share of delay, and the fastest recovery option increases cost or quality risk.`
+    task = 'Quantify the gap, identify the bottleneck, build the next-cycle operating plan, assign capacity and owners, address the quality or supplier risk, and define the control points and recovery measures.'
+  } else if (/Software|QA|Product|UI\/UX|Cloud|Cybersecurity|IT Support|Technology/i.test(role.name)) {
+    scenario = `A recent ${industry.name} product or technology change improved one adoption measure but increased incidents, defects, or user drop-off in a specific segment. The next release window is close and the team cannot deliver every requested fix.`
+    task = 'Frame the user and technical problem, triage the evidence, prioritize the response, outline requirements or test cases, address reliability and security risk, and define release and rollback criteria.'
+  } else if (/Project|PMO|Program|Implementation|Transformation|Change Management/i.test(role.name)) {
+    scenario = `A cross-functional ${industry.name} initiative is behind one milestone, has two unresolved dependencies, and faces uneven stakeholder readiness. Recovering the date without changing scope would increase delivery or adoption risk.`
+    task = 'Rebuild the critical action plan, update the dependency and risk log, recommend the scope/date trade-off, assign owners, draft the status communication, and define readiness and escalation checkpoints.'
+  } else if (/Customer|Client|Relationship|Contact Center|Service/i.test(role.name)) {
+    scenario = `Three ${industry.name} customer issues arrive together: a high-impact unresolved case, a repeat-contact pattern affecting many users, and an urgent request with limited evidence. SLA capacity allows the team to address only two immediately.`
+    task = 'Triage the cases, write the first customer response, diagnose the repeat-contact cause, coordinate the recovery, document the case and escalation, and define service and customer-outcome measures.'
+  } else if (/Legal|Compliance|Communications|Public Relations|Investor Relations/i.test(role.name)) {
+    scenario = `A public or stakeholder-facing ${industry.name} message is due today, but one material claim is not fully supported and different audiences face different risks if the wording is wrong. Approval and disclosure responsibilities must remain clear.`
+    task = 'Identify the material issue, verify the governing evidence, recommend what can be communicated, draft the message, map approvals and records, and prepare the response if the issue is challenged.'
+  } else {
+    scenario = `A ${industry.name} team must resolve a performance and service gap involving ${areas}. Demand, cost, and quality signals conflict, ownership is unclear, and only two significant actions can be completed this cycle.`
+    task = `Complete the core ${role.name} work: ${role.description[0].toLowerCase()}${role.description.slice(1)} Prioritize two actions, assign owners and timing, document risks and assumptions, and define measurable results.`
+  }
+
+  task = `${task} ${levelNote}`
+  return {
+    ...question,
+    scenario,
+    task,
+    prompt: `${scenario} ${task}`,
+    guidance: `Submit one integrated ${role.name} work sample grounded in ${industry.name}. We assess diagnosis, functional execution, industry judgement, prioritization, communication, and measurable follow-through.`,
+  }
+}
+
 function applyQuestionFormat(question: Question, format: QuestionFormat, role: RoleFamily, industry: Industry, profile: AssessmentProfile, writtenIndex: number): Question {
   const tags = [...new Set([...question.tags, `format-${format}`])]
   if (format === 'audio') {
-    return {
+    return realisticRoleWorkSample({
       ...question,
       format,
       responseType: 'audio',
@@ -445,10 +818,10 @@ function applyQuestionFormat(question: Question, format: QuestionFormat, role: R
       guidance: 'Speak for 60–90 seconds. Lead with the decision or recommendation, support it with the relevant facts, address the audience appropriately, and close with a clear next step.',
       rubric: [...new Set([...question.rubric, 'Spoken structure', 'Clarity and delivery', 'Audience awareness'])],
       tags,
-    }
+    }, format, role, industry, profile, writtenIndex)
   }
   if (format === 'excel') {
-    return {
+    const configured: Question = {
       ...question,
       format,
       responseType: 'written',
@@ -458,10 +831,13 @@ function applyQuestionFormat(question: Question, format: QuestionFormat, role: R
       tags: [...new Set([...tags, 'excel-work-sample', `data-variant-${dataVariant(role.name)}`])],
       sampleData: sampleDataTask(question, role, industry, profile),
     }
+    return question.dimension === 'industry'
+      ? contextualIndustryWorkSample(configured, format, role, industry, profile)
+      : realisticRoleWorkSample(configured, format, role, industry, profile, writtenIndex)
   }
   if (format === 'written_communication') {
     const isEmail = writtenIndex === 0
-    return {
+    return realisticRoleWorkSample({
       ...question,
       format,
       responseType: 'written',
@@ -473,9 +849,9 @@ function applyQuestionFormat(question: Question, format: QuestionFormat, role: R
         : 'Write 150–220 words. Build a clear narrative from evidence to insight to business impact and recommendation; do not merely repeat the figures.',
       rubric: [...new Set([...question.rubric, isEmail ? 'Professional email structure' : 'Data storytelling', 'Audience awareness', 'Action clarity'])],
       tags,
-    }
+    }, format, role, industry, profile, writtenIndex)
   }
-  return {
+  const configured: Question = {
     ...question,
     format,
     responseType: 'written',
@@ -485,15 +861,24 @@ function applyQuestionFormat(question: Question, format: QuestionFormat, role: R
     rubric: [...new Set([...question.rubric, 'Role-specific judgement', 'Problem solving', 'Practical recommendation'])],
     tags,
   }
+  return question.dimension === 'industry'
+    ? contextualIndustryWorkSample(configured, format, role, industry, profile)
+    : realisticRoleWorkSample(configured, format, role, industry, profile, writtenIndex)
 }
 
 function configureQuestionFormats(questions: Question[], role: RoleFamily, industry: Industry, profile: AssessmentProfile) {
   let writtenIndex = 0
+  const roleFormats = assignRoleFormats(questions.filter((question) => question.dimension === 'role'))
   return questions.map((question) => {
-    if (question.dimension === 'simulation') return { ...question, format: 'simulation' as const, tags: [...new Set([...question.tags, 'format-simulation'])] }
+    if (question.dimension === 'simulation') {
+      const configured = { ...question, format: 'simulation' as const, tags: [...new Set([...question.tags, 'format-simulation'])] }
+      return realisticSimulation(configured, role, industry, profile)
+    }
     const dimensionQuestions = questions.filter((item) => item.dimension === question.dimension)
     const position = dimensionQuestions.findIndex((item) => item.id === question.id)
-    const format = formatByDimension[question.dimension][position]
+    const format = question.dimension === 'role'
+      ? roleFormats.get(question.id) ?? 'situational'
+      : formatByDimension[question.dimension][position]
     const configured = applyQuestionFormat(question, format, role, industry, profile, writtenIndex)
     if (format === 'written_communication') writtenIndex += 1
     return configured
